@@ -155,24 +155,60 @@ for stone in stones:
 
 ## Запуск
 
+### Docker (рекомендуется)
+
+```bash
+# Клонировать и настроить
+git clone https://github.com/shn-moto/kamyczki-bot.git
+cd kamyczki-bot
+cp .env.example .env
+nano .env  # установить TELEGRAM_BOT_TOKEN
+
+# Запустить всё (postgres + bot + cloudflared)
+docker-compose up -d
+
+# Посмотреть URL туннеля
+docker logs kamyczki-tunnel 2>&1 | grep https://
+
+# Логи бота
+docker logs -f kamyczki-bot
+```
+
+**Архитектура Docker:**
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│ cloudflared │────▶│     bot     │────▶│  postgres   │
+│   HTTPS     │     │   :8080     │     │   pgvector  │
+└─────────────┘     └─────────────┘     └─────────────┘
+```
+
+### Локальная разработка (Windows)
+
 ```bash
 # База данных
-docker-compose up -d
+docker-compose up -d postgres
 
 # Бот
 .venv\Scripts\python.exe -m src.main
 
-# Рестарт (Windows) — убивает все python.exe, запускает бота в фоне
+# Рестарт — убивает все python.exe, запускает бота в фоне
 restart.bat
 ```
 
 Лог-файл: `logs/bot.log`
+
+### Linux (systemd)
+
+```bash
+sudo bash deploy/install.sh
+sudo systemctl start cloudflared kamyczki-bot
+```
 
 ## TODO / Идеи
 
 - [x] ~~Кроп изображения до границ камня перед созданием эмбеддинга~~ (rembg)
 - [x] ~~Telegram Mini App для интерактивной карты~~ (Leaflet.js + FastAPI + cloudflared)
 - [x] ~~ZIP код как альтернатива геолокации~~ (для Telegram Desktop)
+- [x] ~~Docker deployment~~ (docker-compose + cloudflared)
 - [ ] Извлечение GPS из EXIF фото (сервис есть, но не используется в handlers)
 - [ ] Оптимизация поиска при большом количестве камней (сейчас O(n) запросов)
-- [ ] Продакшн хостинг Mini App (Vercel, Railway, etc.)
