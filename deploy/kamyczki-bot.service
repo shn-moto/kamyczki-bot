@@ -1,0 +1,15 @@
+[Unit]
+Description=Kamyczki Telegram Bot
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=kamyczki
+WorkingDirectory=/opt/kamyczki-bot
+Environment=PATH=/opt/kamyczki-bot/.venv/bin
+ExecStart=/opt/kamyczki-bot/.venv/bin/python -m src.main
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
