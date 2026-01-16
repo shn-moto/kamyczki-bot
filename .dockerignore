@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.env
+.git/
+.gitignore
+.claude/
+*.jpg
+*.log
+logs/
+deploy/
+*.md
+*.bat
+nul
+instruction.txt
