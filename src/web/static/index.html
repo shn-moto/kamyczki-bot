@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kamyczki Map</title>
+
+    <!-- Telegram Web App SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+        }
+
+        .header {
+            padding: 12px 16px;
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border-bottom: 1px solid var(--tg-theme-hint-color, #999);
+        }
+
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .header .subtitle {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #999);
+            margin-top: 2px;
+        }
+
+        #map {
+            width: 100%;
+            height: calc(100vh - 60px);
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 20px;
+            left: 10px;
+            background: var(--tg-theme-bg-color, white);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            z-index: 1000;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 4px 0;
+        }
+
+        .legend-marker {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .legend-marker.start { background: #22c55e; }
+        .legend-marker.middle { background: #3b82f6; }
+        .legend-marker.end { background: #ef4444; }
+
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-size: 16px;
+        }
+
+        .error {
+            padding: 20px;
+            text-align: center;
+            color: #ef4444;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 id="stone-name">Loading...</h1>
+        <div class="subtitle" id="stone-info"></div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="legend">
+        <div class="legend-item">
+            <div class="legend-marker start"></div>
+            <span>Start</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-marker middle"></div>
+            <span>Intermediate</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-marker end"></div>
+            <span>Current</span>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // Initialize Telegram Web App
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Get stone_id from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const stoneId = urlParams.get('stone_id');
+
+        // Get API base URL (same origin)
+        const apiBase = window.location.origin;
+
+        // Initialize map
+        let map = null;
+
+        function createMarkerIcon(color) {
+            return L.divIcon({
+                className: 'custom-marker',
+                html: `<div style="
+                    width: 20px;
+                    height: 20px;
+                    background: ${color};
+                    border: 3px solid white;
+                    border-radius: 50%;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                "></div>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10],
+            });
+        }
+
+        async function loadMapData() {
+            if (!stoneId) {
+                document.getElementById('stone-name').textContent = 'Error';
+                document.getElementById('stone-info').textContent = 'No stone_id provided';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${apiBase}/api/stones/${stoneId}/map-data`);
+                if (!response.ok) {
+                    throw new Error('Stone not found');
+                }
+
+                const data = await response.json();
+
+                // Update header
+                document.getElementById('stone-name').textContent = data.stone.name;
+                document.getElementById('stone-info').textContent =
+                    `${data.points.length} location(s) recorded`;
+
+                if (data.points.length === 0) {
+                    document.getElementById('stone-info').textContent = 'No locations recorded yet';
+                    // Show default map centered on Europe
+                    map = L.map('map').setView([52.0, 20.0], 5);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; OpenStreetMap'
+                    }).addTo(map);
+                    return;
+                }
+
+                // Initialize map
+                map = L.map('map');
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap'
+                }).addTo(map);
+
+                // Add markers and build polyline
+                const coords = [];
+                data.points.forEach((point, index) => {
+                    const latLng = [point.lat, point.lon];
+                    coords.push(latLng);
+
+                    // Determine marker color
+                    let color;
+                    if (index === 0) {
+                        color = '#22c55e'; // green - start
+                    } else if (index === data.points.length - 1) {
+                        color = '#ef4444'; // red - end
+                    } else {
+                        color = '#3b82f6'; // blue - middle
+                    }
+
+                    // Add marker
+                    const marker = L.marker(latLng, { icon: createMarkerIcon(color) })
+                        .addTo(map);
+
+                    // Popup with info
+                    let popupContent = `<b>${point.date}</b>`;
+                    if (point.zip_code) {
+                        popupContent += `<br>${point.zip_code}`;
+                    }
+                    marker.bindPopup(popupContent);
+                });
+
+                // Draw route line
+                if (coords.length > 1) {
+                    L.polyline(coords, {
+                        color: '#3b82f6',
+                        weight: 3,
+                        opacity: 0.7,
+                    }).addTo(map);
+                }
+
+                // Fit map to show all markers
+                const bounds = L.latLngBounds(coords);
+                map.fitBounds(bounds, { padding: [30, 30] });
+
+            } catch (error) {
+                console.error('Error loading map data:', error);
+                document.getElementById('stone-name').textContent = 'Error';
+                document.getElementById('stone-info').textContent = error.message;
+            }
+        }
+
+        // Load data on page load
+        loadMapData();
+    </script>
+</body>
+</html>
