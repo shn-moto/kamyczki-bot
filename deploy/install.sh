@@ -21,6 +21,14 @@ apt install -y python3.11 python3.11-venv python3.11-dev \
     postgresql postgresql-contrib \
     git curl
 
+# Install cloudflared
+if ! command -v cloudflared &>/dev/null; then
+    echo "Installing cloudflared..."
+    curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o /tmp/cloudflared.deb
+    dpkg -i /tmp/cloudflared.deb
+    rm /tmp/cloudflared.deb
+fi
+
 # Create user
 if ! id "$APP_USER" &>/dev/null; then
     echo "Creating user $APP_USER..."
@@ -66,18 +74,23 @@ fi
 mkdir -p $APP_DIR/logs
 chown -R $APP_USER:$APP_USER $APP_DIR
 
-# Install systemd service
-echo "Installing systemd service..."
+# Install systemd services
+echo "Installing systemd services..."
 cp $APP_DIR/deploy/kamyczki-bot.service /etc/systemd/system/
+cp $APP_DIR/deploy/cloudflared.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable kamyczki-bot
+systemctl enable cloudflared
 
 echo ""
 echo "=== Installation complete ==="
 echo ""
 echo "Next steps:"
 echo "1. Edit /opt/kamyczki-bot/.env and set TELEGRAM_BOT_TOKEN"
-echo "2. Start the bot: sudo systemctl start kamyczki-bot"
-echo "3. Check status: sudo systemctl status kamyczki-bot"
-echo "4. View logs: journalctl -u kamyczki-bot -f"
+echo "2. Start cloudflared: sudo systemctl start cloudflared"
+echo "3. Get tunnel URL: journalctl -u cloudflared | grep 'https://'"
+echo "4. Update WEBAPP_BASE_URL in .env with the tunnel URL"
+echo "5. Start the bot: sudo systemctl start kamyczki-bot"
+echo "6. Check status: sudo systemctl status kamyczki-bot cloudflared"
+echo "7. View logs: journalctl -u kamyczki-bot -f"
 echo ""

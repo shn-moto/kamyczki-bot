@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudflared Tunnel for Kamyczki Bot
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cloudflared tunnel --url http://localhost:8080
+ExecStartPost=/bin/bash -c 'sleep 5 && /opt/kamyczki-bot/deploy/update-tunnel-url.sh'
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
