@@ -60,9 +60,43 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         "Доступные команды:\n"
         "/start - Начать работу с ботом\n"
         "/help - Показать справку\n"
+        "/mine - Мои камни\n"
         "/cancel - Отменить текущую операцию\n\n"
         "Просто отправь фото камня!"
     )
+
+
+async def mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /mine command - show user's stones."""
+    user_id = update.effective_user.id
+
+    try:
+        async with async_session() as session:
+            # Get stones registered by user
+            result = await session.execute(
+                select(Stone)
+                .options(selectinload(Stone.history))
+                .where(Stone.registered_by_user_id == user_id)
+            )
+            stones = result.scalars().all()
+
+            if not stones:
+                await update.message.reply_text(
+                    "У тебя пока нет зарегистрированных камней.\n\n"
+                    "Отправь фото камня, чтобы зарегистрировать!"
+                )
+                return
+
+            lines = ["🪨 Твои камни:\n"]
+            for stone in stones:
+                history_count = len(stone.history)
+                lines.append(f"• {stone.name} ({history_count})")
+
+            await update.message.reply_text("\n".join(lines))
+
+    except Exception as e:
+        logger.error(f"Error in mine_command: {e}", exc_info=True)
+        await update.message.reply_text("❌ Произошла ошибка. Попробуйте снова.")
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -539,4 +573,5 @@ def setup_handlers(app: Application) -> None:
 
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("mine", mine_command))
     app.add_handler(conv_handler)
