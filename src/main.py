@@ -13,6 +13,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress noisy httpx logs (telegram API polling)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 async def post_init(application: Application) -> None:
     """Initialize services after bot startup."""
