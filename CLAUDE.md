@@ -153,6 +153,16 @@ for stone in stones:
     )
 ```
 
+## Известные проблемы и решения
+
+### NumPy 2.x несовместимость
+torch и open-clip скомпилированы с NumPy 1.x. Решение: `numpy<2` в requirements.txt.
+
+### uvloop конфликт с telegram bot
+uvicorn[standard] включает uvloop, который патчит `asyncio.get_event_loop()` глобально. Решения:
+- `loop="asyncio"` в `uvicorn.run()` (web/app.py)
+- `asyncio.set_event_loop(asyncio.new_event_loop())` перед запуском (main.py)
+
 ## Развертывание
 
 - **Репозиторий:** https://github.com/shn-moto/kamyczki-bot
@@ -170,13 +180,28 @@ cp .env.example .env
 nano .env  # установить TELEGRAM_BOT_TOKEN
 
 # Запустить всё (postgres + bot + cloudflared)
-docker-compose up -d
+docker compose up -d
 
 # Посмотреть URL туннеля
-docker logs kamyczki-tunnel 2>&1 | grep https://
+docker compose logs kamyczki-tunnel 2>&1 | grep https://
 
 # Логи бота
-docker logs -f kamyczki-bot
+docker compose logs -f kamyczki-bot
+```
+
+**Первый запуск:** CLIP и rembg скачивают модели (~1-2GB), это занимает время. Модели кэшируются в Docker volume.
+
+**Обновление кода (без изменения зависимостей):**
+```bash
+git pull
+docker compose build bot
+docker compose up -d
+```
+
+**Полная пересборка (при изменении requirements.txt):**
+```bash
+docker compose build --no-cache bot
+docker compose up -d
 ```
 
 **Архитектура Docker:**
@@ -191,7 +216,7 @@ docker logs -f kamyczki-bot
 
 ```bash
 # База данных
-docker-compose up -d postgres
+docker compose up -d postgres
 
 # Бот
 .venv\Scripts\python.exe -m src.main
