@@ -11,6 +11,7 @@ from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ConversationHandler,
     filters,
     ContextTypes,
@@ -27,6 +28,7 @@ from src.services.geocoding import get_location_from_gps, get_coords_from_zip
 from src.services.map_service import generate_stone_map_image
 from src.database.connection import async_session
 from src.database.models import Stone, StoneHistory
+from src.i18n import get_text, get_user_language, set_user_language, LANGUAGES
 
 logger = logging.getLogger(__name__)
 
@@ -36,34 +38,66 @@ WAITING_DESCRIPTION = 2
 WAITING_LOCATION = 3
 
 # Similarity threshold for finding existing stones
-# 0.70 - false positives (similar background)
-# 0.80 - false positives (colorful stones)
-# 0.88 - too strict, misses real matches
-# 0.85 - still too strict (Стрекоза: 0.8491)
-# 0.84 - optimal: catches 0.8491, rejects 0.8235
 SIMILARITY_THRESHOLD = 0.82
+
+
+def t(key: str, update: Update, **kwargs) -> str:
+    """Shortcut for get_text with user_id from update."""
+    return get_text(key, update.effective_user.id, **kwargs)
+
+
+def get_location_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    """Get location keyboard with translated buttons."""
+    lang = get_user_language(user_id)
+    btn_location = get_text("btn_send_location", user_id)
+    btn_zip = get_text("btn_enter_zip", user_id)
+    btn_skip = get_text("btn_skip", user_id)
+
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton(btn_location, request_location=True)],
+         [btn_zip], [btn_skip]],
+        one_time_keyboard=True,
+        resize_keyboard=True,
+    )
+
+
+def get_skip_keyboard(user_id: int) -> ReplyKeyboardMarkup:
+    """Get skip keyboard with translated button."""
+    btn_skip = get_text("btn_skip", user_id)
+    return ReplyKeyboardMarkup([[btn_skip]], one_time_keyboard=True, resize_keyboard=True)
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command."""
-    await update.message.reply_text(
-        "Привет! Я kamyczki-bot.\n\n"
-        "Отправь мне фото камня:\n"
-        "• Если камень уже зарегистрирован — покажу информацию\n"
-        "• Если новый — помогу зарегистрировать"
-    )
+    await update.message.reply_text(t("start", update))
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /help command."""
+    await update.message.reply_text(t("help", update))
+
+
+async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /lang command - show language selection."""
+    keyboard = []
+    for code, name in LANGUAGES.items():
+        keyboard.append([InlineKeyboardButton(name, callback_data=f"lang:{code}")])
+
     await update.message.reply_text(
-        "Доступные команды:\n"
-        "/start - Начать работу с ботом\n"
-        "/help - Показать справку\n"
-        "/mine - Мои камни\n"
-        "/cancel - Отменить текущую операцию\n\n"
-        "Просто отправь фото камня!"
+        t("lang_select", update),
+        reply_markup=InlineKeyboardMarkup(keyboard)
     )
+
+
+async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle language selection callback."""
+    query = update.callback_query
+    await query.answer()
+
+    lang_code = query.data.split(":")[1]
+    set_user_language(update.effective_user.id, lang_code)
+
+    await query.edit_message_text(get_text("lang_changed", update.effective_user.id))
 
 
 async def mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -72,7 +106,6 @@ async def mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     try:
         async with async_session() as session:
-            # Get stones registered by user
             result = await session.execute(
                 select(Stone)
                 .options(selectinload(Stone.history))
@@ -81,13 +114,10 @@ async def mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             stones = result.scalars().all()
 
             if not stones:
-                await update.message.reply_text(
-                    "У тебя пока нет зарегистрированных камней.\n\n"
-                    "Отправь фото камня, чтобы зарегистрировать!"
-                )
+                await update.message.reply_text(t("no_stones", update))
                 return
 
-            lines = ["🪨 Твои камни:\n"]
+            lines = [t("my_stones", update)]
             for stone in stones:
                 history_count = len(stone.history)
                 lines.append(f"• {stone.name} ({history_count})")
@@ -96,56 +126,42 @@ async def mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     except Exception as e:
         logger.error(f"Error in mine_command: {e}", exc_info=True)
-        await update.message.reply_text("❌ Произошла ошибка. Попробуйте снова.")
+        await update.message.reply_text(t("error_generic", update))
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle photo message - detect stone, search or register."""
     try:
-        # Clear previous session data
         context.user_data.clear()
 
-        await update.message.reply_text("Анализирую изображение...")
+        await update.message.reply_text(t("analyzing", update))
 
-        # Download photo
         photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
         image_bytes = bytes(await file.download_as_bytearray())
         logger.info(f"Downloaded photo: {len(image_bytes)} bytes")
 
-        # Smart crop stone from background
         clip = get_clip_service()
         crop_result = clip.smart_crop_stone(image_bytes)
 
         if crop_result is None:
-            await update.message.reply_text(
-                "❌ Камень не найден на изображении.\n\n"
-                "Убедитесь, что камень хорошо виден на фото и попробуйте снова."
-            )
+            await update.message.reply_text(t("stone_not_found", update))
             return ConversationHandler.END
 
         cropped_bytes, thumbnail_bytes = crop_result
 
-        # Check if cropped image is a painted stone
         is_stone, confidence = clip.is_stone(cropped_bytes)
         logger.info(f"Stone detection: is_stone={is_stone}, confidence={confidence:.4f}")
 
         if not is_stone:
-            await update.message.reply_text(
-                "❌ Камень не распознан.\n\n"
-                "Убедитесь, что на фото плоский камень с рисунком, "
-                "и попробуйте снова."
-            )
+            await update.message.reply_text(t("stone_not_recognized", update))
             return ConversationHandler.END
 
-        # Get embedding from cropped image for better similarity search
         embedding = clip.get_embedding(cropped_bytes)
         logger.info(f"Generated embedding: {len(embedding)} dimensions")
 
-        # Search for similar stone in database
         existing_stone = await find_similar_stone(embedding)
 
-        # Store data in context
         context.user_data["photo_file_id"] = photo.file_id
         context.user_data["embedding"] = embedding
         context.user_data["thumbnail_bytes"] = thumbnail_bytes
@@ -155,53 +171,40 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context.user_data["location"] = None
 
         if existing_stone:
-            # Stone found - show info and add to history
             context.user_data["found_stone_id"] = existing_stone.id
             context.user_data["existing_stone"] = existing_stone
 
             history_count = len(existing_stone.history)
-            info_text = (
-                f"✅ Камень найден!\n\n"
-                f"📛 Имя: {existing_stone.name}\n"
-            )
+            info_text = t("stone_found", update) + "\n\n"
+            info_text += t("stone_name", update, name=existing_stone.name) + "\n"
             if existing_stone.description:
-                info_text += f"📝 Описание: {existing_stone.description}\n"
-            info_text += f"📍 Замечен {history_count} раз(а)\n"
-            info_text += "\nОтправь геолокацию или введи ZIP код:"
+                info_text += t("stone_description", update, description=existing_stone.description) + "\n"
+            info_text += t("stone_seen", update, count=history_count)
+            info_text += t("send_location_prompt", update)
 
-            # Send cropped thumbnail
             await update.message.reply_photo(
                 photo=BytesIO(thumbnail_bytes),
-                caption="📷 Распознанный камень"
+                caption=t("cropped_stone", update)
             )
 
-            # Ask for location
-            location_keyboard = ReplyKeyboardMarkup(
-                [[KeyboardButton("📍 Отправить местоположение", request_location=True)],
-                 ["Ввести ZIP код"], ["Пропустить"]],
-                one_time_keyboard=True,
-                resize_keyboard=True,
+            await update.message.reply_text(
+                info_text,
+                reply_markup=get_location_keyboard(update.effective_user.id)
             )
-            await update.message.reply_text(info_text, reply_markup=location_keyboard)
             return WAITING_LOCATION
         else:
-            # New stone - start registration
-            # Send cropped thumbnail
             await update.message.reply_photo(
                 photo=BytesIO(thumbnail_bytes),
-                caption="📷 Распознанный камень"
+                caption=t("cropped_stone", update)
             )
             await update.message.reply_text(
-                "🆕 Новый камень!\n\n"
-                "Введите имя для камня:"
+                t("new_stone", update) + "\n\n" + t("enter_name", update)
             )
             return WAITING_NAME
 
     except Exception as e:
         logger.error(f"Error in handle_photo: {e}", exc_info=True)
-        await update.message.reply_text(
-            "❌ Произошла ошибка при обработке фото. Попробуйте снова."
-        )
+        await update.message.reply_text(t("error_photo", update))
         return ConversationHandler.END
 
 
@@ -210,14 +213,13 @@ async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     name = update.message.text.strip()
 
     if len(name) < 2:
-        await update.message.reply_text("Имя слишком короткое. Введите имя (минимум 2 символа):")
+        await update.message.reply_text(t("name_too_short", update))
         return WAITING_NAME
 
     context.user_data["name"] = name
     await update.message.reply_text(
-        f"Имя: {name}\n\n"
-        "Добавить описание? (или нажми «Пропустить»)",
-        reply_markup=ReplyKeyboardMarkup([["Пропустить"]], one_time_keyboard=True, resize_keyboard=True),
+        t("add_description", update, name=name),
+        reply_markup=get_skip_keyboard(update.effective_user.id),
     )
     return WAITING_DESCRIPTION
 
@@ -225,19 +227,14 @@ async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def handle_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle description input."""
     text = update.message.text.strip()
-    description = None if text == "Пропустить" else text
+    btn_skip = get_text("btn_skip", update.effective_user.id)
+
+    description = None if text == btn_skip else text
     context.user_data["description"] = description
 
-    # Ask for location
-    location_keyboard = ReplyKeyboardMarkup(
-        [[KeyboardButton("📍 Отправить местоположение", request_location=True)],
-         ["Ввести ZIP код"], ["Пропустить"]],
-        one_time_keyboard=True,
-        resize_keyboard=True,
-    )
     await update.message.reply_text(
-        "Отправь геолокацию или введи ZIP код:",
-        reply_markup=location_keyboard,
+        t("send_location_prompt", update).strip(),
+        reply_markup=get_location_keyboard(update.effective_user.id),
     )
     return WAITING_LOCATION
 
@@ -253,7 +250,6 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             context.user_data["longitude"] = lon
             logger.info(f"Received location: {lat}, {lon}")
 
-            # Get address from coordinates
             try:
                 geo_data = await get_location_from_gps(lat, lon)
                 if geo_data:
@@ -262,11 +258,9 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             except Exception as e:
                 logger.error(f"Geocoding failed: {e}")
 
-        # Check if this is for existing stone or new registration
         existing_stone = context.user_data.get("existing_stone")
 
         if existing_stone:
-            # Add to history for existing stone
             await add_to_history(
                 stone_id=existing_stone.id,
                 user_id=update.effective_user.id,
@@ -277,7 +271,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             )
             logger.info(f"Added to history for stone_id={existing_stone.id}")
 
-            msg = "✅ Сохранено в истории!"
+            msg = t("saved_to_history", update)
             if context.user_data.get("location"):
                 loc = context.user_data["location"]
                 loc_str = ""
@@ -287,18 +281,15 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     loc_str += f", {loc['zip_code']}"
                 if loc.get("country"):
                     loc_str += f", {loc['country']}"
-                msg = f"🗺 Местоположение: {loc_str}\n" + msg
+                msg = t("location_label", update, location=loc_str) + "\n" + msg
 
             await update.message.reply_text(msg, reply_markup=ReplyKeyboardRemove())
-
-            # Send map with updated history
             await send_stone_map(update, existing_stone.id)
         else:
-            # Register new stone
             await register_stone(context.user_data, update.effective_user.id)
             logger.info(f"Registered new stone: {context.user_data['name']}")
 
-            msg = f"✅ Камень «{context.user_data['name']}» зарегистрирован!"
+            msg = t("stone_registered", update, name=context.user_data['name'])
             if context.user_data.get("location"):
                 loc = context.user_data["location"]
                 loc_str = ""
@@ -308,7 +299,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     loc_str += f", {loc['zip_code']}"
                 if loc.get("country"):
                     loc_str += f", {loc['country']}"
-                msg += f"\n🗺 Местоположение: {loc_str}"
+                msg += "\n" + t("location_label", update, location=loc_str)
 
             await update.message.reply_text(msg, reply_markup=ReplyKeyboardRemove())
 
@@ -317,7 +308,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     except Exception as e:
         logger.error(f"Error in handle_location: {e}", exc_info=True)
         await update.message.reply_text(
-            "❌ Произошла ошибка. Попробуйте снова.",
+            t("error_generic", update),
             reply_markup=ReplyKeyboardRemove()
         )
         return ConversationHandler.END
@@ -329,7 +320,6 @@ async def handle_skip_location(update: Update, context: ContextTypes.DEFAULT_TYP
         existing_stone = context.user_data.get("existing_stone")
 
         if existing_stone:
-            # Add to history without location
             await add_to_history(
                 stone_id=existing_stone.id,
                 user_id=update.effective_user.id,
@@ -337,17 +327,15 @@ async def handle_skip_location(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             logger.info(f"Added to history (no location) for stone_id={existing_stone.id}")
             await update.message.reply_text(
-                "✅ Сохранено в истории (без местоположения)!",
+                t("saved_no_location", update),
                 reply_markup=ReplyKeyboardRemove(),
             )
-            # Send map
             await send_stone_map(update, existing_stone.id)
         else:
-            # Register new stone without location
             await register_stone(context.user_data, update.effective_user.id)
             logger.info(f"Registered new stone (no location): {context.user_data['name']}")
             await update.message.reply_text(
-                f"✅ Камень «{context.user_data['name']}» зарегистрирован!",
+                t("stone_registered", update, name=context.user_data['name']),
                 reply_markup=ReplyKeyboardRemove(),
             )
 
@@ -356,7 +344,7 @@ async def handle_skip_location(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.error(f"Error in handle_skip_location: {e}", exc_info=True)
         await update.message.reply_text(
-            "❌ Произошла ошибка. Попробуйте снова.",
+            t("error_generic", update),
             reply_markup=ReplyKeyboardRemove()
         )
         return ConversationHandler.END
@@ -376,24 +364,23 @@ async def send_stone_map(update: Update, stone_id: int) -> None:
             if stone and stone.history:
                 map_image = generate_stone_map_image(stone.history, stone.name)
                 if map_image:
-                    # Check if Mini App URL is configured
                     if settings.webapp_base_url:
                         webapp_url = f"{settings.webapp_base_url}/static/index.html?stone_id={stone_id}"
                         keyboard = InlineKeyboardMarkup([
                             [InlineKeyboardButton(
-                                "🗺 Интерактивная карта",
+                                t("interactive_map", update),
                                 web_app=WebAppInfo(url=webapp_url)
                             )]
                         ])
                         await update.message.reply_photo(
                             photo=BytesIO(map_image),
-                            caption="🗺 Карта перемещений\n🟢 старт → 🔴 финиш",
+                            caption=t("map_caption", update),
                             reply_markup=keyboard,
                         )
                     else:
                         await update.message.reply_photo(
                             photo=BytesIO(map_image),
-                            caption="🗺 Карта перемещений\n🟢 старт → 🔴 финиш"
+                            caption=t("map_caption", update)
                         )
     except Exception as e:
         logger.error(f"Error sending map: {e}", exc_info=True)
@@ -403,22 +390,28 @@ async def handle_location_fallback(update: Update, context: ContextTypes.DEFAULT
     """Handle unexpected input in WAITING_LOCATION state."""
     text = update.message.text.strip() if update.message.text else ""
     text_lower = text.lower()
+    user_id = update.effective_user.id
 
-    # Accept variations of "skip"
-    if text_lower in ["пропустить", "skip", "пропуск", "-", "нет"]:
+    # Get translated button texts for comparison
+    btn_skip = get_text("btn_skip", user_id).lower()
+    btn_zip = get_text("btn_enter_zip", user_id).lower()
+
+    # Accept variations of "skip" in all languages
+    skip_variants = ["пропустить", "skip", "pomiń", "пропуск", "-", "нет", "no", "nie"]
+    if text_lower == btn_skip or text_lower in skip_variants:
         return await handle_skip_location(update, context)
 
     # User wants to enter ZIP code
-    if text_lower in ["ввести zip код", "ввести zip", "zip", "zip код"]:
+    zip_variants = ["ввести zip код", "ввести zip", "zip", "zip код", "enter zip", "wpisz kod"]
+    if text_lower == btn_zip or text_lower in zip_variants:
         await update.message.reply_text(
-            "Введи почтовый индекс (ZIP код):",
-            reply_markup=ReplyKeyboardMarkup([["Пропустить"]], one_time_keyboard=True, resize_keyboard=True),
+            t("enter_zip", update),
+            reply_markup=get_skip_keyboard(user_id),
         )
         return WAITING_LOCATION
 
-    # Check if input looks like a ZIP code (alphanumeric, 3-10 chars)
+    # Check if input looks like a ZIP code
     if len(text) >= 3 and len(text) <= 10 and text.replace("-", "").replace(" ", "").isalnum():
-        # Try to get coordinates from ZIP code
         coords = await get_coords_from_zip(text)
         lat, lon = coords if coords else (None, None)
 
@@ -429,39 +422,36 @@ async def handle_location_fallback(update: Update, context: ContextTypes.DEFAULT
         existing_stone = context.user_data.get("existing_stone")
 
         if existing_stone:
-            # Add to history for existing stone
             await add_to_history(
                 stone_id=existing_stone.id,
-                user_id=update.effective_user.id,
+                user_id=user_id,
                 photo_file_id=context.user_data["photo_file_id"],
                 latitude=lat,
                 longitude=lon,
                 zip_code=text,
             )
-            msg = f"✅ Сохранено в истории!\n📮 ZIP: {text}"
+            msg = t("saved_to_history", update) + "\n" + t("zip_label", update, zip=text)
             if lat and lon:
-                msg += f"\n📍 Координаты: {lat:.4f}, {lon:.4f}"
+                msg += "\n" + t("coords_label", update, lat=lat, lon=lon)
             await update.message.reply_text(msg, reply_markup=ReplyKeyboardRemove())
             await send_stone_map(update, existing_stone.id)
         else:
-            # Register new stone
-            await register_stone(context.user_data, update.effective_user.id)
-            msg = f"✅ Камень «{context.user_data['name']}» зарегистрирован!\n📮 ZIP: {text}"
+            await register_stone(context.user_data, user_id)
+            msg = t("stone_registered", update, name=context.user_data['name'])
+            msg += "\n" + t("zip_label", update, zip=text)
             if lat and lon:
-                msg += f"\n📍 Координаты: {lat:.4f}, {lon:.4f}"
+                msg += "\n" + t("coords_label", update, lat=lat, lon=lon)
             await update.message.reply_text(msg, reply_markup=ReplyKeyboardRemove())
 
         return ConversationHandler.END
 
-    await update.message.reply_text(
-        "Отправь геолокацию, введи ZIP код или нажми «Пропустить»."
-    )
+    await update.message.reply_text(t("location_prompt", update))
     return WAITING_LOCATION
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancel conversation."""
-    await update.message.reply_text("Операция отменена.", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text(t("cancelled", update), reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
 
@@ -469,7 +459,6 @@ async def find_similar_stone(embedding: list[float]) -> Stone | None:
     """Find stone with similar embedding using cosine similarity."""
     try:
         async with async_session() as session:
-            # Get all stones with embeddings
             result = await session.execute(
                 select(Stone)
                 .options(selectinload(Stone.history))
@@ -480,7 +469,6 @@ async def find_similar_stone(embedding: list[float]) -> Stone | None:
             if not stones:
                 return None
 
-            # Calculate similarity for each stone
             best_stone = None
             best_similarity = -1.0
 
@@ -564,7 +552,6 @@ def setup_handlers(app: Application) -> None:
             WAITING_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_description)],
             WAITING_LOCATION: [
                 MessageHandler(filters.LOCATION, handle_location),
-                MessageHandler(filters.Regex("^Пропустить$"), handle_skip_location),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_location_fallback),
             ],
         },
@@ -573,5 +560,7 @@ def setup_handlers(app: Application) -> None:
 
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("lang", lang_command))
     app.add_handler(CommandHandler("mine", mine_command))
+    app.add_handler(CallbackQueryHandler(lang_callback, pattern="^lang:"))
     app.add_handler(conv_handler)
