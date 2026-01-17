@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from telegram.ext import Application
 
@@ -21,6 +22,9 @@ async def post_init(application: Application) -> None:
 
 def main() -> None:
     """Start the bot."""
+    # Create event loop before uvicorn imports uvloop
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
     # Start web server for Mini App
     start_web_server(port=settings.web_port)
 
