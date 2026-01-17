@@ -153,6 +153,11 @@ for stone in stones:
     )
 ```
 
+## Развертывание
+
+- **Репозиторий:** https://github.com/shn-moto/kamyczki-bot
+- **Сервер развертывания:** `192.168.1.107` (Linux Mint, Docker)
+
 ## Запуск
 
 ### Docker (рекомендуется)
