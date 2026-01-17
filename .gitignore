@@ -13,4 +13,5 @@ logs/
 .claude/
 *.jpg
 nul
+restart.bat
 instruction.txt
