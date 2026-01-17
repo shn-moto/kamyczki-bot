@@ -33,7 +33,8 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 def start_web_server(host: str = "0.0.0.0", port: int = 8080) -> Thread:
     """Start web server in a background thread."""
     def run():
-        uvicorn.run(app, host=host, port=port, log_level="info")
+        # Use asyncio loop instead of uvloop to avoid conflict with telegram bot
+        uvicorn.run(app, host=host, port=port, log_level="info", loop="asyncio")
 
     thread = Thread(target=run, daemon=True)
     thread.start()
