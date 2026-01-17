@@ -41,7 +41,7 @@ WAITING_LOCATION = 3
 # 0.88 - too strict, misses real matches
 # 0.85 - still too strict (Стрекоза: 0.8491)
 # 0.84 - optimal: catches 0.8491, rejects 0.8235
-SIMILARITY_THRESHOLD = 0.83
+SIMILARITY_THRESHOLD = 0.82
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
