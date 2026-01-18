@@ -42,7 +42,7 @@ src/
 ### Новый камень:
 1. Фото → **rembg кроп** → CLIP детекция → эмбеддинг
 2. **Миниатюра кропа** + "Новый камень!" → ввод имени → описание (опционально)
-3. Геолокация или ZIP код → регистрация в БД
+3. Геолокация или ZIP код → регистрация в БД → **вывод ID камня**
 
 ## Умный кроп камня
 
@@ -117,6 +117,10 @@ def get_web_session():
 - **PostgreSQL 16 + pgvector** (docker-compose.yml)
 - Таблица `stones`: id, name, description, photo_file_id, embedding(512), registered_by_user_id
 - Таблица `stone_history`: id, stone_id, telegram_user_id, photo_file_id, lat, lon, zip_code, created_at
+
+### Хранение фото
+
+Фото камней хранятся на серверах Telegram. В БД сохраняется только `photo_file_id` — уникальный идентификатор файла. При `/info` бот отправляет фото по этому ID без локального хранения. Ограничение: `file_id` привязан к конкретному боту.
 
 ## Ключевые параметры
 
