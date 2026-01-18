@@ -28,7 +28,7 @@ from src.services.geocoding import get_location_from_gps, get_coords_from_zip
 from src.services.map_service import generate_stone_map_image
 from src.database.connection import async_session
 from src.database.models import Stone, StoneHistory
-from src.i18n import get_text, get_user_language, set_user_language, LANGUAGES
+from src.i18n import get_text, get_user_language, load_user_language, save_user_language, LANGUAGES
 
 logger = logging.getLogger(__name__)
 
@@ -72,16 +72,19 @@ def get_skip_keyboard(user_id: int) -> ReplyKeyboardMarkup:
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /start command."""
+    await load_user_language(update.effective_user.id)
     await update.message.reply_text(t("start", update))
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /help command."""
+    await load_user_language(update.effective_user.id)
     await update.message.reply_text(t("help", update))
 
 
 async def lang_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /lang command - show language selection."""
+    await load_user_language(update.effective_user.id)
     keyboard = []
     for code, name in LANGUAGES.items():
         keyboard.append([InlineKeyboardButton(name, callback_data=f"lang:{code}")])
@@ -98,13 +101,14 @@ async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await query.answer()
 
     lang_code = query.data.split(":")[1]
-    set_user_language(update.effective_user.id, lang_code)
+    await save_user_language(update.effective_user.id, lang_code)
 
     await query.edit_message_text(get_text("lang_changed", update.effective_user.id))
 
 
 async def mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /mine command - show user's stones with pagination."""
+    await load_user_language(update.effective_user.id)
     await show_my_stones(update, page=0)
 
 
@@ -195,6 +199,7 @@ async def mine_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /info command - show stone details by ID."""
     user_id = update.effective_user.id
+    await load_user_language(user_id)
 
     if not context.args or len(context.args) != 1:
         await update.message.reply_text(t("info_usage", update))
@@ -245,6 +250,7 @@ async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle /delete command - delete a stone by ID."""
     user_id = update.effective_user.id
+    await load_user_language(user_id)
 
     # Parse stone ID from command arguments
     if not context.args or len(context.args) != 1:
@@ -347,6 +353,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     """Handle photo message - detect stone, search or register."""
     try:
         context.user_data.clear()
+        await load_user_language(update.effective_user.id)
 
         await update.message.reply_text(t("analyzing", update))
 

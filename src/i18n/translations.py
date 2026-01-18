@@ -1,4 +1,4 @@
-"""Simple i18n system for the bot."""
+"""Simple i18n system for the bot with database persistence."""
 
 from typing import Dict
 
@@ -11,19 +11,76 @@ LANGUAGES = {
 
 DEFAULT_LANGUAGE = "pl"
 
-# User language preferences (in-memory, resets on restart)
-# TODO: persist to database for production use
+# In-memory cache for user language preferences
+# Loaded from DB on first access, updated on change
 _user_languages: Dict[int, str] = {}
 
 
 def get_user_language(user_id: int) -> str:
-    """Get user's preferred language."""
+    """Get user's preferred language from cache.
+
+    Note: Use load_user_language() first to populate cache from DB.
+    """
     return _user_languages.get(user_id, DEFAULT_LANGUAGE)
 
 
-def set_user_language(user_id: int, lang: str) -> None:
-    """Set user's preferred language."""
+def set_user_language_cache(user_id: int, lang: str) -> None:
+    """Update in-memory cache (called after DB update)."""
     if lang in LANGUAGES:
+        _user_languages[user_id] = lang
+
+
+async def load_user_language(user_id: int) -> str:
+    """Load user's language from database into cache."""
+    if user_id in _user_languages:
+        return _user_languages[user_id]
+
+    from sqlalchemy import select
+    from src.database.connection import async_session
+    from src.database.models import UserSettings
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(UserSettings).where(UserSettings.telegram_user_id == user_id)
+            )
+            settings = result.scalar_one_or_none()
+
+            if settings and settings.language in LANGUAGES:
+                _user_languages[user_id] = settings.language
+                return settings.language
+    except Exception:
+        pass
+
+    return DEFAULT_LANGUAGE
+
+
+async def save_user_language(user_id: int, lang: str) -> None:
+    """Save user's language to database and update cache."""
+    if lang not in LANGUAGES:
+        return
+
+    from sqlalchemy import select
+    from src.database.connection import async_session
+    from src.database.models import UserSettings
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(UserSettings).where(UserSettings.telegram_user_id == user_id)
+            )
+            settings = result.scalar_one_or_none()
+
+            if settings:
+                settings.language = lang
+            else:
+                settings = UserSettings(telegram_user_id=user_id, language=lang)
+                session.add(settings)
+
+            await session.commit()
+            _user_languages[user_id] = lang
+    except Exception:
+        # Fallback to cache-only
         _user_languages[user_id] = lang
 
 

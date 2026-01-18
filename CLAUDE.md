@@ -117,6 +117,7 @@ def get_web_session():
 - **PostgreSQL 16 + pgvector** (docker-compose.yml)
 - Таблица `stones`: id, name, description, photo_file_id, embedding(512), registered_by_user_id
 - Таблица `stone_history`: id, stone_id, telegram_user_id, photo_file_id, lat, lon, zip_code, created_at
+- Таблица `user_settings`: telegram_user_id, language, created_at, updated_at
 
 ### Хранение фото
 
@@ -266,7 +267,7 @@ sudo systemctl start cloudflared kamyczki-bot
 
 - **Языки:** Polski (по умолчанию), English, Русский
 - **Команда:** `/lang` — выбор языка через inline-кнопки
-- **Хранение:** в памяти (сбрасывается при перезапуске)
+- **Хранение:** PostgreSQL (таблица `user_settings`) + in-memory кэш
 - **Файлы:** `src/i18n/translations.py`
 
 ## Команды бота
@@ -287,7 +288,7 @@ sudo systemctl start cloudflared kamyczki-bot
 - [x] ~~Docker deployment~~ (docker-compose + cloudflared)
 - [x] ~~Локализация (i18n)~~ (PL, EN, RU)
 - [x] ~~Оптимизация поиска~~ (HNSW индекс, O(log n) вместо O(n))
-- [ ] Сохранение языка пользователя в БД (персистентность)
+- [x] ~~Сохранение языка пользователя в БД~~ (таблица user_settings)
 
 ## Отброшенные идеи
 

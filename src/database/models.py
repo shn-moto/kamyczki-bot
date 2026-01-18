@@ -46,3 +46,12 @@ class StoneHistory(Base):
 
     # Relationship to stone
     stone = relationship("Stone", back_populates="history")
+
+
+class UserSettings(Base):
+    __tablename__ = "user_settings"
+
+    telegram_user_id = Column(Integer, primary_key=True)
+    language = Column(String(10), default="pl")
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
