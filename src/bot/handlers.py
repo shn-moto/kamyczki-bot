@@ -150,7 +150,15 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
             lines.append("")
             lines.append(get_text("page_info", user_id, page=page + 1, total=total_pages, count=total_stones))
 
+            # Build keyboard with info buttons for each stone
             keyboard = []
+            for stone in page_stones:
+                keyboard.append([InlineKeyboardButton(
+                    f"📋 #{stone.id} {stone.name}",
+                    callback_data=f"stone_info:{stone.id}"
+                )])
+
+            # Navigation buttons
             nav_buttons = []
             if page > 0:
                 nav_buttons.append(InlineKeyboardButton(
@@ -194,6 +202,50 @@ async def mine_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     page = int(query.data.split(":")[1])
     await show_my_stones(update, page=page, edit_message=True)
+
+
+async def stone_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle stone info callback from /mine list."""
+    query = update.callback_query
+    await query.answer()
+
+    user_id = update.effective_user.id
+    stone_id = int(query.data.split(":")[1])
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Stone)
+                .options(selectinload(Stone.history))
+                .where(Stone.id == stone_id)
+            )
+            stone = result.scalar_one_or_none()
+
+            if not stone:
+                await query.message.reply_text(get_text("info_not_found", user_id, id=stone_id))
+                return
+
+            history_count = len(stone.history)
+            info_text = get_text("stone_id", user_id, id=stone.id) + "\n"
+            info_text += get_text("stone_name", user_id, name=stone.name) + "\n"
+            if stone.description:
+                info_text += get_text("stone_description", user_id, description=stone.description) + "\n"
+            info_text += get_text("stone_seen", user_id, count=history_count)
+
+            if stone.photo_file_id:
+                await query.message.reply_photo(
+                    photo=stone.photo_file_id,
+                    caption=info_text
+                )
+            else:
+                await query.message.reply_text(info_text)
+
+            if stone.history:
+                await send_stone_map_from_query(query, stone.id)
+
+    except Exception as e:
+        logger.error(f"Error in stone_info_callback: {e}", exc_info=True)
+        await query.message.reply_text(get_text("error_generic", user_id))
 
 
 async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -574,6 +626,16 @@ async def handle_skip_location(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def send_stone_map(update: Update, stone_id: int) -> None:
     """Send map image for stone history."""
+    await _send_stone_map_impl(update.message, update.effective_user.id, stone_id)
+
+
+async def send_stone_map_from_query(query, stone_id: int) -> None:
+    """Send map image for stone history from callback query."""
+    await _send_stone_map_impl(query.message, query.from_user.id, stone_id)
+
+
+async def _send_stone_map_impl(message, user_id: int, stone_id: int) -> None:
+    """Internal implementation for sending stone map."""
     try:
         async with async_session() as session:
             result = await session.execute(
@@ -590,19 +652,19 @@ async def send_stone_map(update: Update, stone_id: int) -> None:
                         webapp_url = f"{settings.webapp_base_url}/static/index.html?stone_id={stone_id}"
                         keyboard = InlineKeyboardMarkup([
                             [InlineKeyboardButton(
-                                t("interactive_map", update),
+                                get_text("interactive_map", user_id),
                                 web_app=WebAppInfo(url=webapp_url)
                             )]
                         ])
-                        await update.message.reply_photo(
+                        await message.reply_photo(
                             photo=BytesIO(map_image),
-                            caption=t("map_caption", update),
+                            caption=get_text("map_caption", user_id),
                             reply_markup=keyboard,
                         )
                     else:
-                        await update.message.reply_photo(
+                        await message.reply_photo(
                             photo=BytesIO(map_image),
-                            caption=t("map_caption", update)
+                            caption=get_text("map_caption", user_id)
                         )
     except Exception as e:
         logger.error(f"Error sending map: {e}", exc_info=True)
@@ -800,5 +862,6 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CallbackQueryHandler(lang_callback, pattern="^lang:"))
     app.add_handler(CallbackQueryHandler(mine_page_callback, pattern="^mine_page:"))
+    app.add_handler(CallbackQueryHandler(stone_info_callback, pattern="^stone_info:"))
     app.add_handler(CallbackQueryHandler(delete_callback, pattern="^delete_"))
     app.add_handler(conv_handler)
