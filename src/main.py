@@ -24,12 +24,11 @@ async def post_init(application: Application) -> None:
     logger.info("Database initialized")
 
     # Set bot commands menu for each language
+    # Note: /info and /delete require ID argument, so they're not in menu
     commands_pl = [
         BotCommand("start", "Rozpocznij"),
         BotCommand("help", "Pomoc"),
         BotCommand("mine", "Moje kamyki"),
-        BotCommand("info", "Info o kamyku"),
-        BotCommand("delete", "Usuń kamyk"),
         BotCommand("lang", "Zmień język"),
         BotCommand("cancel", "Anuluj"),
     ]
@@ -37,8 +36,6 @@ async def post_init(application: Application) -> None:
         BotCommand("start", "Start"),
         BotCommand("help", "Help"),
         BotCommand("mine", "My rocks"),
-        BotCommand("info", "Rock info"),
-        BotCommand("delete", "Delete rock"),
         BotCommand("lang", "Change language"),
         BotCommand("cancel", "Cancel"),
     ]
@@ -46,8 +43,6 @@ async def post_init(application: Application) -> None:
         BotCommand("start", "Начать"),
         BotCommand("help", "Справка"),
         BotCommand("mine", "Мои камни"),
-        BotCommand("info", "Инфо о камне"),
-        BotCommand("delete", "Удалить камень"),
         BotCommand("lang", "Сменить язык"),
         BotCommand("cancel", "Отмена"),
     ]
