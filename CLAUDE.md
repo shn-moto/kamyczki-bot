@@ -13,6 +13,9 @@ src/
 ├── database/
 │   ├── models.py        # SQLAlchemy: Stone, StoneHistory
 │   └── connection.py    # AsyncPG connection
+├── i18n/
+│   ├── __init__.py      # Экспорт функций локализации
+│   └── translations.py  # Переводы (PL, EN, RU)
 ├── services/
 │   ├── clip_service.py  # CLIP ViT-B/32 + rembg кроп
 │   ├── map_service.py   # Генерация PNG карты (staticmap)
@@ -183,7 +186,7 @@ nano .env  # установить TELEGRAM_BOT_TOKEN
 docker compose up -d
 
 # Посмотреть URL туннеля
-docker compose logs kamyczki-tunnel 2>&1 | grep https://
+docker compose logs cloudflared | grep trycloudflare
 
 # Логи бота
 docker compose logs -f kamyczki-bot
@@ -234,11 +237,28 @@ sudo bash deploy/install.sh
 sudo systemctl start cloudflared kamyczki-bot
 ```
 
+## Локализация (i18n)
+
+- **Языки:** Polski (по умолчанию), English, Русский
+- **Команда:** `/lang` — выбор языка через inline-кнопки
+- **Хранение:** в памяти (сбрасывается при перезапуске)
+- **Файлы:** `src/i18n/translations.py`
+
+## Команды бота
+
+- `/start` — приветствие
+- `/help` — справка
+- `/mine` — список камней пользователя с количеством перемещений
+- `/lang` — смена языка интерфейса
+- `/cancel` — отмена текущей операции
+
 ## TODO / Идеи
 
 - [x] ~~Кроп изображения до границ камня перед созданием эмбеддинга~~ (rembg)
 - [x] ~~Telegram Mini App для интерактивной карты~~ (Leaflet.js + FastAPI + cloudflared)
 - [x] ~~ZIP код как альтернатива геолокации~~ (для Telegram Desktop)
 - [x] ~~Docker deployment~~ (docker-compose + cloudflared)
+- [x] ~~Локализация (i18n)~~ (PL, EN, RU)
+- [ ] Сохранение языка пользователя в БД (персистентность)
 - [ ] Извлечение GPS из EXIF фото (сервис есть, но не используется в handlers)
 - [ ] Оптимизация поиска при большом количестве камней (сейчас O(n) запросов)
