@@ -18,7 +18,7 @@ from telegram.ext import (
 )
 import logging
 from io import BytesIO
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 
 from src.config import settings
@@ -120,13 +120,114 @@ async def mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             lines = [t("my_stones", update)]
             for stone in stones:
                 history_count = len(stone.history)
-                lines.append(f"• {stone.name} ({history_count})")
+                lines.append(f"• #{stone.id} {stone.name} ({history_count})")
 
             await update.message.reply_text("\n".join(lines))
 
     except Exception as e:
         logger.error(f"Error in mine_command: {e}", exc_info=True)
         await update.message.reply_text(t("error_generic", update))
+
+
+async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /delete command - delete a stone by ID."""
+    user_id = update.effective_user.id
+
+    # Parse stone ID from command arguments
+    if not context.args or len(context.args) != 1:
+        await update.message.reply_text(t("delete_usage", update))
+        return
+
+    try:
+        stone_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text(t("delete_usage", update))
+        return
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Stone)
+                .where(Stone.id == stone_id)
+                .where(Stone.registered_by_user_id == user_id)
+            )
+            stone = result.scalar_one_or_none()
+
+            if not stone:
+                await update.message.reply_text(t("delete_not_found", update, id=stone_id))
+                return
+
+            # Ask for confirmation
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        get_text("btn_confirm_delete", user_id),
+                        callback_data=f"delete_confirm:{stone_id}"
+                    ),
+                    InlineKeyboardButton(
+                        get_text("btn_cancel_delete", user_id),
+                        callback_data=f"delete_cancel:{stone_id}"
+                    ),
+                ]
+            ])
+
+            await update.message.reply_text(
+                t("delete_confirm", update, name=stone.name, id=stone_id),
+                reply_markup=keyboard
+            )
+
+    except Exception as e:
+        logger.error(f"Error in delete_command: {e}", exc_info=True)
+        await update.message.reply_text(t("error_generic", update))
+
+
+async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle delete confirmation/cancellation callback."""
+    query = update.callback_query
+    await query.answer()
+
+    action, stone_id_str = query.data.split(":")
+    stone_id = int(stone_id_str)
+    user_id = update.effective_user.id
+
+    if action == "delete_cancel":
+        await query.edit_message_text(get_text("delete_cancelled", user_id))
+        return
+
+    # Confirm deletion
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Stone)
+                .where(Stone.id == stone_id)
+                .where(Stone.registered_by_user_id == user_id)
+            )
+            stone = result.scalar_one_or_none()
+
+            if not stone:
+                await query.edit_message_text(get_text("delete_not_found", user_id, id=stone_id))
+                return
+
+            stone_name = stone.name
+
+            # Delete history first (foreign key constraint)
+            await session.execute(
+                delete(StoneHistory).where(StoneHistory.stone_id == stone_id)
+            )
+
+            # Delete stone
+            await session.execute(
+                delete(Stone).where(Stone.id == stone_id)
+            )
+
+            await session.commit()
+
+            await query.edit_message_text(get_text("delete_success", user_id, name=stone_name))
+            logger.info(f"User {user_id} deleted stone {stone_id} ({stone_name})")
+
+    except Exception as e:
+        logger.error(f"Error in delete_callback: {e}", exc_info=True)
+        await query.edit_message_text(get_text("error_generic", user_id))
 
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -176,6 +277,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
             history_count = len(existing_stone.history)
             info_text = t("stone_found", update) + "\n\n"
+            info_text += t("stone_id", update, id=existing_stone.id) + "\n"
             info_text += t("stone_name", update, name=existing_stone.name) + "\n"
             if existing_stone.description:
                 info_text += t("stone_description", update, description=existing_stone.description) + "\n"
@@ -562,5 +664,7 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("lang", lang_command))
     app.add_handler(CommandHandler("mine", mine_command))
+    app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CallbackQueryHandler(lang_callback, pattern="^lang:"))
+    app.add_handler(CallbackQueryHandler(delete_callback, pattern="^delete_"))
     app.add_handler(conv_handler)

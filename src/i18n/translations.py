@@ -51,6 +51,7 @@ TEXTS = {
             "/start - Rozpocznij pracę z botem\n"
             "/help - Pokaż pomoc\n"
             "/mine - Moje kamyki\n"
+            "/delete <id> - Usuń kamyk\n"
             "/lang - Zmień język\n"
             "/cancel - Anuluj bieżącą operację\n\n"
             "Po prostu wyślij zdjęcie kamyka!"
@@ -72,6 +73,7 @@ TEXTS = {
 
         # Existing stone
         "stone_found": "✅ Kamyk znaleziony!",
+        "stone_id": "🔢 ID: {id}",
         "stone_name": "📛 Nazwa: {name}",
         "stone_description": "📝 Opis: {description}",
         "stone_seen": "📍 Widziany {count} raz(y)",
@@ -109,6 +111,15 @@ TEXTS = {
             "Wyślij zdjęcie kamyka, aby zarejestrować!"
         ),
 
+        # Delete
+        "delete_usage": "Użycie: /delete <id>\nPrzykład: /delete 5",
+        "delete_not_found": "❌ Kamyk #{id} nie znaleziony lub nie należy do Ciebie.",
+        "delete_confirm": "Usunąć kamyk «{name}» (ID: {id})?\n\n⚠️ Ta operacja jest nieodwracalna!",
+        "delete_success": "✅ Kamyk «{name}» został usunięty.",
+        "delete_cancelled": "Usuwanie anulowane.",
+        "btn_confirm_delete": "🗑 Tak, usuń",
+        "btn_cancel_delete": "❌ Anuluj",
+
         # Errors
         "error_photo": "❌ Wystąpił błąd podczas przetwarzania zdjęcia. Spróbuj ponownie.",
         "error_generic": "❌ Wystąpił błąd. Spróbuj ponownie.",
@@ -128,6 +139,7 @@ TEXTS = {
             "/start - Start the bot\n"
             "/help - Show help\n"
             "/mine - My rocks\n"
+            "/delete <id> - Delete a rock\n"
             "/lang - Change language\n"
             "/cancel - Cancel current operation\n\n"
             "Just send a photo of a rock!"
@@ -149,6 +161,7 @@ TEXTS = {
 
         # Existing stone
         "stone_found": "✅ Rock found!",
+        "stone_id": "🔢 ID: {id}",
         "stone_name": "📛 Name: {name}",
         "stone_description": "📝 Description: {description}",
         "stone_seen": "📍 Seen {count} time(s)",
@@ -186,6 +199,15 @@ TEXTS = {
             "Send a photo of a rock to register!"
         ),
 
+        # Delete
+        "delete_usage": "Usage: /delete <id>\nExample: /delete 5",
+        "delete_not_found": "❌ Rock #{id} not found or doesn't belong to you.",
+        "delete_confirm": "Delete rock «{name}» (ID: {id})?\n\n⚠️ This action is irreversible!",
+        "delete_success": "✅ Rock «{name}» has been deleted.",
+        "delete_cancelled": "Deletion cancelled.",
+        "btn_confirm_delete": "🗑 Yes, delete",
+        "btn_cancel_delete": "❌ Cancel",
+
         # Errors
         "error_photo": "❌ Error processing photo. Please try again.",
         "error_generic": "❌ An error occurred. Please try again.",
@@ -205,6 +227,7 @@ TEXTS = {
             "/start - Начать работу с ботом\n"
             "/help - Показать справку\n"
             "/mine - Мои камни\n"
+            "/delete <id> - Удалить камень\n"
             "/lang - Сменить язык\n"
             "/cancel - Отменить текущую операцию\n\n"
             "Просто отправь фото камня!"
@@ -227,6 +250,7 @@ TEXTS = {
 
         # Existing stone
         "stone_found": "✅ Камень найден!",
+        "stone_id": "🔢 ID: {id}",
         "stone_name": "📛 Имя: {name}",
         "stone_description": "📝 Описание: {description}",
         "stone_seen": "📍 Замечен {count} раз(а)",
@@ -263,6 +287,15 @@ TEXTS = {
             "У тебя пока нет зарегистрированных камней.\n\n"
             "Отправь фото камня, чтобы зарегистрировать!"
         ),
+
+        # Delete
+        "delete_usage": "Использование: /delete <id>\nПример: /delete 5",
+        "delete_not_found": "❌ Камень #{id} не найден или не принадлежит тебе.",
+        "delete_confirm": "Удалить камень «{name}» (ID: {id})?\n\n⚠️ Это действие необратимо!",
+        "delete_success": "✅ Камень «{name}» удалён.",
+        "delete_cancelled": "Удаление отменено.",
+        "btn_confirm_delete": "🗑 Да, удалить",
+        "btn_cancel_delete": "❌ Отмена",
 
         # Errors
         "error_photo": "❌ Произошла ошибка при обработке фото. Попробуйте снова.",
