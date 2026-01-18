@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from telegram import BotCommand
 from telegram.ext import Application
 
 from src.config import settings
@@ -21,6 +22,19 @@ async def post_init(application: Application) -> None:
     """Initialize services after bot startup."""
     await init_db()
     logger.info("Database initialized")
+
+    # Set bot commands menu
+    commands = [
+        BotCommand("start", "Rozpocznij / Start / Начать"),
+        BotCommand("help", "Pomoc / Help / Справка"),
+        BotCommand("mine", "Moje kamyki / My rocks / Мои камни"),
+        BotCommand("info", "Info o kamyku / Rock info / Инфо о камне"),
+        BotCommand("delete", "Usuń kamyk / Delete rock / Удалить камень"),
+        BotCommand("lang", "Zmień język / Change language / Сменить язык"),
+        BotCommand("cancel", "Anuluj / Cancel / Отмена"),
+    ]
+    await application.bot.set_my_commands(commands)
+    logger.info("Bot commands menu set")
 
 
 def main() -> None:
