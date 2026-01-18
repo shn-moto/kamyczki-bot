@@ -40,6 +40,9 @@ WAITING_LOCATION = 3
 # Similarity threshold for finding existing stones
 SIMILARITY_THRESHOLD = 0.82
 
+# Pagination settings
+STONES_PER_PAGE = 10
+
 
 def t(key: str, update: Update, **kwargs) -> str:
     """Shortcut for get_text with user_id from update."""
@@ -101,7 +104,12 @@ async def lang_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /mine command - show user's stones."""
+    """Handle /mine command - show user's stones with pagination."""
+    await show_my_stones(update, page=0)
+
+
+async def show_my_stones(update: Update, page: int = 0, edit_message: bool = False) -> None:
+    """Show user's stones with pagination."""
     user_id = update.effective_user.id
 
     try:
@@ -110,22 +118,127 @@ async def mine_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 select(Stone)
                 .options(selectinload(Stone.history))
                 .where(Stone.registered_by_user_id == user_id)
+                .order_by(Stone.id)
             )
             stones = result.scalars().all()
 
             if not stones:
-                await update.message.reply_text(t("no_stones", update))
+                text = get_text("no_stones", user_id)
+                if edit_message:
+                    await update.callback_query.edit_message_text(text)
+                else:
+                    await update.message.reply_text(text)
                 return
 
-            lines = [t("my_stones", update)]
-            for stone in stones:
+            total_stones = len(stones)
+            total_pages = (total_stones + STONES_PER_PAGE - 1) // STONES_PER_PAGE
+            page = max(0, min(page, total_pages - 1))
+
+            start_idx = page * STONES_PER_PAGE
+            end_idx = min(start_idx + STONES_PER_PAGE, total_stones)
+            page_stones = stones[start_idx:end_idx]
+
+            lines = [get_text("my_stones", user_id)]
+            for stone in page_stones:
                 history_count = len(stone.history)
                 lines.append(f"• #{stone.id} {stone.name} ({history_count})")
 
-            await update.message.reply_text("\n".join(lines))
+            lines.append("")
+            lines.append(get_text("page_info", user_id, page=page + 1, total=total_pages, count=total_stones))
+
+            keyboard = []
+            nav_buttons = []
+            if page > 0:
+                nav_buttons.append(InlineKeyboardButton(
+                    get_text("btn_prev_page", user_id),
+                    callback_data=f"mine_page:{page - 1}"
+                ))
+            if page < total_pages - 1:
+                nav_buttons.append(InlineKeyboardButton(
+                    get_text("btn_next_page", user_id),
+                    callback_data=f"mine_page:{page + 1}"
+                ))
+            if nav_buttons:
+                keyboard.append(nav_buttons)
+
+            reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+
+            if edit_message:
+                await update.callback_query.edit_message_text(
+                    "\n".join(lines),
+                    reply_markup=reply_markup
+                )
+            else:
+                await update.message.reply_text(
+                    "\n".join(lines),
+                    reply_markup=reply_markup
+                )
 
     except Exception as e:
-        logger.error(f"Error in mine_command: {e}", exc_info=True)
+        logger.error(f"Error in show_my_stones: {e}", exc_info=True)
+        text = get_text("error_generic", user_id)
+        if edit_message:
+            await update.callback_query.edit_message_text(text)
+        else:
+            await update.message.reply_text(text)
+
+
+async def mine_page_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle pagination callback for /mine."""
+    query = update.callback_query
+    await query.answer()
+
+    page = int(query.data.split(":")[1])
+    await show_my_stones(update, page=page, edit_message=True)
+
+
+async def info_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /info command - show stone details by ID."""
+    user_id = update.effective_user.id
+
+    if not context.args or len(context.args) != 1:
+        await update.message.reply_text(t("info_usage", update))
+        return
+
+    try:
+        stone_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text(t("info_usage", update))
+        return
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Stone)
+                .options(selectinload(Stone.history))
+                .where(Stone.id == stone_id)
+            )
+            stone = result.scalar_one_or_none()
+
+            if not stone:
+                await update.message.reply_text(t("info_not_found", update, id=stone_id))
+                return
+
+            history_count = len(stone.history)
+            info_text = t("stone_id", update, id=stone.id) + "\n"
+            info_text += t("stone_name", update, name=stone.name) + "\n"
+            if stone.description:
+                info_text += t("stone_description", update, description=stone.description) + "\n"
+            info_text += t("stone_seen", update, count=history_count)
+
+            if stone.photo_file_id:
+                await update.message.reply_photo(
+                    photo=stone.photo_file_id,
+                    caption=info_text
+                )
+            else:
+                await update.message.reply_text(info_text)
+
+            if stone.history:
+                await send_stone_map(update, stone.id)
+
+    except Exception as e:
+        logger.error(f"Error in info_command: {e}", exc_info=True)
         await update.message.reply_text(t("error_generic", update))
 
 
@@ -664,7 +777,9 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("lang", lang_command))
     app.add_handler(CommandHandler("mine", mine_command))
+    app.add_handler(CommandHandler("info", info_command))
     app.add_handler(CommandHandler("delete", delete_command))
     app.add_handler(CallbackQueryHandler(lang_callback, pattern="^lang:"))
+    app.add_handler(CallbackQueryHandler(mine_page_callback, pattern="^mine_page:"))
     app.add_handler(CallbackQueryHandler(delete_callback, pattern="^delete_"))
     app.add_handler(conv_handler)

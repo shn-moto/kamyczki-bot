@@ -51,6 +51,7 @@ TEXTS = {
             "/start - Rozpocznij pracę z botem\n"
             "/help - Pokaż pomoc\n"
             "/mine - Moje kamyki\n"
+            "/info <id> - Informacje o kamyku\n"
             "/delete <id> - Usuń kamyk\n"
             "/lang - Zmień język\n"
             "/cancel - Anuluj bieżącą operację\n\n"
@@ -110,6 +111,13 @@ TEXTS = {
             "Nie masz jeszcze zarejestrowanych kamyków.\n\n"
             "Wyślij zdjęcie kamyka, aby zarejestrować!"
         ),
+        "page_info": "📄 Strona {page}/{total} (kamyków: {count})",
+        "btn_prev_page": "⬅️ Poprzednia",
+        "btn_next_page": "Następna ➡️",
+
+        # Info command
+        "info_usage": "Użycie: /info <id>\nPrzykład: /info 5",
+        "info_not_found": "❌ Kamyk #{id} nie znaleziony.",
 
         # Delete
         "delete_usage": "Użycie: /delete <id>\nPrzykład: /delete 5",
@@ -139,6 +147,7 @@ TEXTS = {
             "/start - Start the bot\n"
             "/help - Show help\n"
             "/mine - My rocks\n"
+            "/info <id> - Rock information\n"
             "/delete <id> - Delete a rock\n"
             "/lang - Change language\n"
             "/cancel - Cancel current operation\n\n"
@@ -198,6 +207,13 @@ TEXTS = {
             "You don't have any registered rocks yet.\n\n"
             "Send a photo of a rock to register!"
         ),
+        "page_info": "📄 Page {page}/{total} (rocks: {count})",
+        "btn_prev_page": "⬅️ Previous",
+        "btn_next_page": "Next ➡️",
+
+        # Info command
+        "info_usage": "Usage: /info <id>\nExample: /info 5",
+        "info_not_found": "❌ Rock #{id} not found.",
 
         # Delete
         "delete_usage": "Usage: /delete <id>\nExample: /delete 5",
@@ -227,6 +243,7 @@ TEXTS = {
             "/start - Начать работу с ботом\n"
             "/help - Показать справку\n"
             "/mine - Мои камни\n"
+            "/info <id> - Информация о камне\n"
             "/delete <id> - Удалить камень\n"
             "/lang - Сменить язык\n"
             "/cancel - Отменить текущую операцию\n\n"
@@ -287,6 +304,13 @@ TEXTS = {
             "У тебя пока нет зарегистрированных камней.\n\n"
             "Отправь фото камня, чтобы зарегистрировать!"
         ),
+        "page_info": "📄 Страница {page}/{total} (камней: {count})",
+        "btn_prev_page": "⬅️ Назад",
+        "btn_next_page": "Вперёд ➡️",
+
+        # Info command
+        "info_usage": "Использование: /info <id>\nПример: /info 5",
+        "info_not_found": "❌ Камень #{id} не найден.",
 
         # Delete
         "delete_usage": "Использование: /delete <id>\nПример: /delete 5",

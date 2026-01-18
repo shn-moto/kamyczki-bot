@@ -120,7 +120,8 @@ def get_web_session():
 
 ## Ключевые параметры
 
-- `SIMILARITY_THRESHOLD = 0.83` (handlers.py) — порог для распознавания
+- `SIMILARITY_THRESHOLD = 0.82` (handlers.py) — порог для распознавания
+- `STONES_PER_PAGE = 10` (handlers.py) — камней на странице в /mine
 - CLIP модель: `ViT-B-32` pretrained `laion2b_s34b_b79k` — 512-dim vectors
 - Stone detection threshold: `0.05` (clip_service.py)
 - Web server port: `8080` (config.py: `web_port`)
@@ -248,7 +249,9 @@ sudo systemctl start cloudflared kamyczki-bot
 
 - `/start` — приветствие
 - `/help` — справка
-- `/mine` — список камней пользователя с количеством перемещений
+- `/mine` — список камней пользователя с пагинацией (10 на страницу)
+- `/info <id>` — информация о камне по ID (фото, карта)
+- `/delete <id>` — удаление камня с подтверждением
 - `/lang` — смена языка интерфейса
 - `/cancel` — отмена текущей операции
 
