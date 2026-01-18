@@ -150,13 +150,13 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
             lines.append("")
             lines.append(get_text("page_info", user_id, page=page + 1, total=total_pages, count=total_stones))
 
-            # Build keyboard with info buttons for each stone
+            # Build keyboard with action buttons for each stone (info + delete)
             keyboard = []
             for stone in page_stones:
-                keyboard.append([InlineKeyboardButton(
-                    f"📋 #{stone.id} {stone.name}",
-                    callback_data=f"stone_info:{stone.id}"
-                )])
+                keyboard.append([
+                    InlineKeyboardButton(f"📋 #{stone.id}", callback_data=f"stone_info:{stone.id}"),
+                    InlineKeyboardButton(f"🗑 #{stone.id}", callback_data=f"delete_ask:{stone.id}"),
+                ])
 
             # Navigation buttons
             nav_buttons = []
@@ -350,6 +350,51 @@ async def delete_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         logger.error(f"Error in delete_command: {e}", exc_info=True)
         await update.message.reply_text(t("error_generic", update))
+
+
+async def delete_ask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle delete request from /mine list - show confirmation dialog."""
+    query = update.callback_query
+    await query.answer()
+
+    stone_id = int(query.data.split(":")[1])
+    user_id = update.effective_user.id
+
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(Stone)
+                .where(Stone.id == stone_id)
+                .where(Stone.registered_by_user_id == user_id)
+            )
+            stone = result.scalar_one_or_none()
+
+            if not stone:
+                await query.message.reply_text(get_text("delete_not_found", user_id, id=stone_id))
+                return
+
+            # Ask for confirmation
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton(
+                        get_text("btn_confirm_delete", user_id),
+                        callback_data=f"delete_confirm:{stone_id}"
+                    ),
+                    InlineKeyboardButton(
+                        get_text("btn_cancel_delete", user_id),
+                        callback_data=f"delete_cancel:{stone_id}"
+                    ),
+                ]
+            ])
+
+            await query.message.reply_text(
+                get_text("delete_confirm", user_id, name=stone.name, id=stone_id),
+                reply_markup=keyboard
+            )
+
+    except Exception as e:
+        logger.error(f"Error in delete_ask_callback: {e}", exc_info=True)
+        await query.message.reply_text(get_text("error_generic", user_id))
 
 
 async def delete_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -863,5 +908,6 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CallbackQueryHandler(lang_callback, pattern="^lang:"))
     app.add_handler(CallbackQueryHandler(mine_page_callback, pattern="^mine_page:"))
     app.add_handler(CallbackQueryHandler(stone_info_callback, pattern="^stone_info:"))
-    app.add_handler(CallbackQueryHandler(delete_callback, pattern="^delete_"))
+    app.add_handler(CallbackQueryHandler(delete_ask_callback, pattern="^delete_ask:"))
+    app.add_handler(CallbackQueryHandler(delete_callback, pattern="^delete_confirm:|^delete_cancel:"))
     app.add_handler(conv_handler)
