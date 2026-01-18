@@ -148,17 +148,37 @@ def get_web_session():
 
 Зазор между "свой" и "чужой" камень ~0.02, подбор порога критичен.
 
-## Известные особенности pgvector + asyncpg
+## Векторный поиск с HNSW индексом
 
-**ВАЖНО:** `order_by(Stone.embedding.cosine_distance(python_list))` НЕ работает с asyncpg — параметр не передается в SQL корректно.
+**HNSW (Hierarchical Navigable Small World)** — алгоритм приближённого поиска ближайших соседей. Индекс создаётся автоматически в `init_db()`:
 
-Решение в `find_similar_stone()`: получаем все камни и вычисляем distance для каждого отдельным запросом:
+```sql
+CREATE INDEX IF NOT EXISTS stones_embedding_hnsw_idx
+ON stones USING hnsw (embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
+```
+
+**Параметры индекса:**
+- `m = 16` — число связей на узел (больше = точнее, но больше памяти)
+- `ef_construction = 64` — размер динамического списка при построении
+
+**Сложность поиска:** O(log n) вместо O(n).
+
+### Особенности asyncpg + pgvector
+
+SQLAlchemy ORM `order_by(Stone.embedding.cosine_distance(list))` не работает с asyncpg — параметр не передаётся корректно.
+
+**Решение:** raw SQL с `text()` и явным приведением к `::vector`:
 ```python
-for stone in stones:
-    distance_result = await session.execute(
-        select(Stone.embedding.cosine_distance(embedding))
-        .where(Stone.id == stone.id)
-    )
+result = await session.execute(
+    text("""
+        SELECT *, 1 - (embedding <=> :embedding::vector) as similarity
+        FROM stones
+        ORDER BY embedding <=> :embedding::vector
+        LIMIT 1
+    """),
+    {"embedding": "[0.1,0.2,...]"}  # строка в формате PostgreSQL array
+)
 ```
 
 ## Известные проблемы и решения
@@ -266,8 +286,8 @@ sudo systemctl start cloudflared kamyczki-bot
 - [x] ~~ZIP код как альтернатива геолокации~~ (для Telegram Desktop)
 - [x] ~~Docker deployment~~ (docker-compose + cloudflared)
 - [x] ~~Локализация (i18n)~~ (PL, EN, RU)
+- [x] ~~Оптимизация поиска~~ (HNSW индекс, O(log n) вместо O(n))
 - [ ] Сохранение языка пользователя в БД (персистентность)
-- [ ] Оптимизация поиска при большом количестве камней (сейчас O(n) запросов)
 
 ## Отброшенные идеи
 

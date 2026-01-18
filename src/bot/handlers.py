@@ -671,39 +671,50 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def find_similar_stone(embedding: list[float]) -> Stone | None:
-    """Find stone with similar embedding using cosine similarity."""
+    """Find stone with similar embedding using cosine similarity.
+
+    Uses HNSW index for O(log n) search instead of O(n).
+    """
     try:
         async with async_session() as session:
-            result = await session.execute(
-                select(Stone)
-                .options(selectinload(Stone.history))
-                .where(Stone.embedding.isnot(None))
-            )
-            stones = result.scalars().all()
+            # Convert embedding to PostgreSQL array format
+            embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
 
-            if not stones:
+            # Use raw SQL with text() to properly pass vector parameter
+            # This allows pgvector to use the HNSW index for fast ANN search
+            from sqlalchemy import text
+
+            result = await session.execute(
+                text("""
+                    SELECT id, name, description, photo_file_id, embedding,
+                           registered_by_user_id, created_at,
+                           1 - (embedding <=> :embedding::vector) as similarity
+                    FROM stones
+                    WHERE embedding IS NOT NULL
+                    ORDER BY embedding <=> :embedding::vector
+                    LIMIT 1
+                """),
+                {"embedding": embedding_str}
+            )
+            row = result.fetchone()
+
+            if not row:
                 return None
 
-            best_stone = None
-            best_similarity = -1.0
+            similarity = row.similarity
 
-            for stone in stones:
-                distance_result = await session.execute(
-                    select(Stone.embedding.cosine_distance(embedding))
-                    .where(Stone.id == stone.id)
+            if similarity >= SIMILARITY_THRESHOLD:
+                # Load the full Stone object with history
+                stone_result = await session.execute(
+                    select(Stone)
+                    .options(selectinload(Stone.history))
+                    .where(Stone.id == row.id)
                 )
-                distance = distance_result.scalar_one()
-                similarity = 1 - distance
-
-                if similarity > best_similarity:
-                    best_similarity = similarity
-                    best_stone = stone
-
-            if best_stone and best_similarity >= SIMILARITY_THRESHOLD:
-                logger.info(f"Match: {best_stone.name} (sim={best_similarity:.4f})")
-                return best_stone
+                stone = stone_result.scalar_one()
+                logger.info(f"Match: {stone.name} (sim={similarity:.4f})")
+                return stone
             else:
-                logger.info(f"No match (best={best_similarity:.4f}, threshold={SIMILARITY_THRESHOLD})")
+                logger.info(f"No match (best={similarity:.4f}, threshold={SIMILARITY_THRESHOLD})")
                 return None
 
     except Exception as e:
