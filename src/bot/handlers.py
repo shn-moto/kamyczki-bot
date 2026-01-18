@@ -501,10 +501,10 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await update.message.reply_text(msg, reply_markup=ReplyKeyboardRemove())
             await send_stone_map(update, existing_stone.id)
         else:
-            await register_stone(context.user_data, update.effective_user.id)
-            logger.info(f"Registered new stone: {context.user_data['name']}")
+            stone_id = await register_stone(context.user_data, update.effective_user.id)
+            logger.info(f"Registered new stone: {context.user_data['name']} (ID: {stone_id})")
 
-            msg = t("stone_registered", update, name=context.user_data['name'])
+            msg = t("stone_registered", update, name=context.user_data['name'], id=stone_id)
             if context.user_data.get("location"):
                 loc = context.user_data["location"]
                 loc_str = ""
@@ -547,10 +547,10 @@ async def handle_skip_location(update: Update, context: ContextTypes.DEFAULT_TYP
             )
             await send_stone_map(update, existing_stone.id)
         else:
-            await register_stone(context.user_data, update.effective_user.id)
-            logger.info(f"Registered new stone (no location): {context.user_data['name']}")
+            stone_id = await register_stone(context.user_data, update.effective_user.id)
+            logger.info(f"Registered new stone (no location): {context.user_data['name']} (ID: {stone_id})")
             await update.message.reply_text(
-                t("stone_registered", update, name=context.user_data['name']),
+                t("stone_registered", update, name=context.user_data['name'], id=stone_id),
                 reply_markup=ReplyKeyboardRemove(),
             )
 
@@ -651,8 +651,8 @@ async def handle_location_fallback(update: Update, context: ContextTypes.DEFAULT
             await update.message.reply_text(msg, reply_markup=ReplyKeyboardRemove())
             await send_stone_map(update, existing_stone.id)
         else:
-            await register_stone(context.user_data, user_id)
-            msg = t("stone_registered", update, name=context.user_data['name'])
+            stone_id = await register_stone(context.user_data, user_id)
+            msg = t("stone_registered", update, name=context.user_data['name'], id=stone_id)
             msg += "\n" + t("zip_label", update, zip=text)
             if lat and lon:
                 msg += "\n" + t("coords_label", update, lat=lat, lon=lon)
@@ -711,8 +711,8 @@ async def find_similar_stone(embedding: list[float]) -> Stone | None:
         return None
 
 
-async def register_stone(data: dict, user_id: int) -> None:
-    """Register new stone and add first history entry."""
+async def register_stone(data: dict, user_id: int) -> int:
+    """Register new stone and add first history entry. Returns stone ID."""
     async with async_session() as session:
         stone = Stone(
             name=data["name"],
@@ -734,6 +734,7 @@ async def register_stone(data: dict, user_id: int) -> None:
         )
         session.add(history)
         await session.commit()
+        return stone.id
 
 
 async def add_to_history(

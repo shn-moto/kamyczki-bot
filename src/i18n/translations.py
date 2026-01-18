@@ -96,7 +96,7 @@ TEXTS = {
         # Save messages
         "saved_to_history": "✅ Zapisano w historii!",
         "saved_no_location": "✅ Zapisano w historii (bez lokalizacji)!",
-        "stone_registered": "✅ Kamyk «{name}» zarejestrowany!",
+        "stone_registered": "✅ Kamyk «{name}» zarejestrowany!\n🔢 ID: {id}",
         "location_label": "🗺 Lokalizacja: {location}",
         "zip_label": "📮 ZIP: {zip}",
         "coords_label": "📍 Współrzędne: {lat:.4f}, {lon:.4f}",
@@ -192,7 +192,7 @@ TEXTS = {
         # Save messages
         "saved_to_history": "✅ Saved to history!",
         "saved_no_location": "✅ Saved to history (no location)!",
-        "stone_registered": "✅ Rock «{name}» registered!",
+        "stone_registered": "✅ Rock «{name}» registered!\n🔢 ID: {id}",
         "location_label": "🗺 Location: {location}",
         "zip_label": "📮 ZIP: {zip}",
         "coords_label": "📍 Coordinates: {lat:.4f}, {lon:.4f}",
@@ -289,7 +289,7 @@ TEXTS = {
         # Save messages
         "saved_to_history": "✅ Сохранено в истории!",
         "saved_no_location": "✅ Сохранено в истории (без местоположения)!",
-        "stone_registered": "✅ Камень «{name}» зарегистрирован!",
+        "stone_registered": "✅ Камень «{name}» зарегистрирован!\n🔢 ID: {id}",
         "location_label": "🗺 Местоположение: {location}",
         "zip_label": "📮 ZIP: {zip}",
         "coords_label": "📍 Координаты: {lat:.4f}, {lon:.4f}",
