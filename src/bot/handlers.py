@@ -807,19 +807,18 @@ async def find_similar_stone(embedding: list[float]) -> Stone | None:
 
             # Use raw SQL with text() to properly pass vector parameter
             # This allows pgvector to use the HNSW index for fast ANN search
-            from sqlalchemy import text
+            from sqlalchemy import text, bindparam
 
             result = await session.execute(
                 text("""
                     SELECT id, name, description, photo_file_id, embedding,
                            registered_by_user_id, created_at,
-                           1 - (embedding <=> :embedding::vector) as similarity
+                           1 - (embedding <=> CAST(:embedding AS vector)) as similarity
                     FROM stones
                     WHERE embedding IS NOT NULL
-                    ORDER BY embedding <=> :embedding::vector
+                    ORDER BY embedding <=> CAST(:embedding AS vector)
                     LIMIT 1
-                """),
-                {"embedding": embedding_str}
+                """).bindparams(bindparam("embedding", value=embedding_str, literal_execute=True))
             )
             row = result.fetchone()
 

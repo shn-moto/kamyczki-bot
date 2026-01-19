@@ -29,6 +29,12 @@ async def post_init(application: Application) -> None:
     get_clip_service()
     logger.info("CLIP model loaded")
 
+    # Pre-load rembg model (also heavy, loads U2-Net on first use)
+    logger.info("Loading rembg model...")
+    from rembg import new_session
+    new_session("u2net")
+    logger.info("rembg model loaded")
+
     # Set bot commands menu for each language
     # Note: /info and /delete require ID argument, so they're not in menu
     commands_pl = [
