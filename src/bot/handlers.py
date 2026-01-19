@@ -149,13 +149,21 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
                 get_text("page_info", user_id, page=page + 1, total=total_pages, count=total_stones)
             ]
 
-            # Build keyboard: wide info button + compact delete icon
+            # Build keyboard: single wide info button with fixed-width text
             keyboard = []
             for stone in page_stones:
                 history_count = len(stone.history)
+                # Fixed width: "📋 #ID Name... (N)" - total ~30 chars for alignment
+                prefix = f"📋 #{stone.id} "
+                suffix = f" ({history_count})"
+                max_name_len = 25 - len(prefix) - len(suffix)
+                if len(stone.name) > max_name_len:
+                    name_display = stone.name[:max_name_len - 2] + ".."
+                else:
+                    name_display = stone.name
+                button_text = f"{prefix}{name_display}{suffix}"
                 keyboard.append([
-                    InlineKeyboardButton(f"📋 #{stone.id} {stone.name} ({history_count})", callback_data=f"stone_info:{stone.id}"),
-                    InlineKeyboardButton("🗑", callback_data=f"delete_ask:{stone.id}"),
+                    InlineKeyboardButton(button_text, callback_data=f"stone_info:{stone.id}"),
                 ])
 
             # Navigation buttons
@@ -232,13 +240,24 @@ async def stone_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
                 info_text += get_text("stone_description", user_id, description=stone.description) + "\n"
             info_text += get_text("stone_seen", user_id, count=history_count)
 
+            # Delete button for stone owner
+            delete_button = None
+            if stone.registered_by_user_id == user_id:
+                delete_button = InlineKeyboardMarkup([[
+                    InlineKeyboardButton(
+                        get_text("btn_delete", user_id),
+                        callback_data=f"delete_ask:{stone.id}"
+                    )
+                ]])
+
             if stone.photo_file_id:
                 await query.message.reply_photo(
                     photo=stone.photo_file_id,
-                    caption=info_text
+                    caption=info_text,
+                    reply_markup=delete_button
                 )
             else:
-                await query.message.reply_text(info_text)
+                await query.message.reply_text(info_text, reply_markup=delete_button)
 
             if stone.history:
                 await send_stone_map_from_query(query, stone.id)

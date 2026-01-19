@@ -184,6 +184,7 @@ TEXTS = {
         "delete_cancelled": "Usuwanie anulowane.",
         "btn_confirm_delete": "🗑 Tak, usuń",
         "btn_cancel_delete": "❌ Anuluj",
+        "btn_delete": "🗑 Usuń kamyk",
 
         # Errors
         "error_photo": "❌ Wystąpił błąd podczas przetwarzania zdjęcia. Spróbuj ponownie.",
@@ -280,6 +281,7 @@ TEXTS = {
         "delete_cancelled": "Deletion cancelled.",
         "btn_confirm_delete": "🗑 Yes, delete",
         "btn_cancel_delete": "❌ Cancel",
+        "btn_delete": "🗑 Delete rock",
 
         # Errors
         "error_photo": "❌ Error processing photo. Please try again.",
@@ -377,6 +379,7 @@ TEXTS = {
         "delete_cancelled": "Удаление отменено.",
         "btn_confirm_delete": "🗑 Да, удалить",
         "btn_cancel_delete": "❌ Отмена",
+        "btn_delete": "🗑 Удалить камень",
 
         # Errors
         "error_photo": "❌ Произошла ошибка при обработке фото. Попробуйте снова.",
