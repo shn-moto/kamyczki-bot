@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 
 from src.config import settings
 from src.services.exif import get_exif_gps
-from src.services.clip_service import get_clip_service
+from src.services.ml_service import process_image
 from src.services.geocoding import get_location_from_gps, get_coords_from_zip
 from src.services.map_service import generate_stone_map_image
 from src.database.connection import async_session
@@ -470,24 +470,21 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         image_bytes = bytes(await file.download_as_bytearray())
         logger.info(f"Downloaded photo: {len(image_bytes)} bytes")
 
-        clip = get_clip_service()
-        crop_result = clip.smart_crop_stone(image_bytes)
+        # Process image through ML service (local or Modal)
+        ml_result = await process_image(image_bytes)
 
-        if crop_result is None:
+        if ml_result["cropped_image"] is None:
             await update.message.reply_text(t("stone_not_found", update))
             return ConversationHandler.END
 
-        cropped_bytes, thumbnail_bytes = crop_result
+        thumbnail_bytes = ml_result["thumbnail"]
 
-        is_stone, confidence = clip.is_stone(cropped_bytes)
-        logger.info(f"Stone detection: is_stone={is_stone}, confidence={confidence:.4f}")
-
-        if not is_stone:
+        if not ml_result["is_stone"]:
             await update.message.reply_text(t("stone_not_recognized", update))
             return ConversationHandler.END
 
-        embedding = clip.get_embedding(cropped_bytes)
-        logger.info(f"Generated embedding: {len(embedding)} dimensions")
+        embedding = ml_result["embedding"]
+        logger.info(f"ML result: is_stone={ml_result['is_stone']}, confidence={ml_result['confidence']:.4f}")
 
         existing_stone = await find_similar_stone(embedding)
 

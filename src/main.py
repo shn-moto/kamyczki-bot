@@ -7,7 +7,7 @@ from src.config import settings
 from src.bot import setup_handlers
 from src.database import init_db
 from src.web import start_web_server
-from src.services.clip_service import get_clip_service
+from src.services.ml_service import preload_models
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -24,16 +24,8 @@ async def post_init(application: Application) -> None:
     await init_db()
     logger.info("Database initialized")
 
-    # Pre-load CLIP model (heavy, do it once at startup)
-    logger.info("Loading CLIP model...")
-    get_clip_service()
-    logger.info("CLIP model loaded")
-
-    # Pre-load rembg model (also heavy, loads U2-Net on first use)
-    logger.info("Loading rembg model...")
-    from rembg import new_session
-    new_session("u2net")
-    logger.info("rembg model loaded")
+    # Pre-load ML models (only if using local ML, skipped for serverless)
+    preload_models()
 
     # Set bot commands menu for each language
     # Note: /info and /delete require ID argument, so they're not in menu
