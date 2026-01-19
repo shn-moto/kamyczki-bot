@@ -142,20 +142,20 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
             end_idx = min(start_idx + STONES_PER_PAGE, total_stones)
             page_stones = stones[start_idx:end_idx]
 
-            lines = [get_text("my_stones", user_id)]
-            for stone in page_stones:
-                history_count = len(stone.history)
-                lines.append(f"• #{stone.id} {stone.name} ({history_count})")
+            # Header and page info only (stone info is on buttons)
+            lines = [
+                get_text("my_stones", user_id),
+                "",
+                get_text("page_info", user_id, page=page + 1, total=total_pages, count=total_stones)
+            ]
 
-            lines.append("")
-            lines.append(get_text("page_info", user_id, page=page + 1, total=total_pages, count=total_stones))
-
-            # Build keyboard with action buttons for each stone (info + delete)
+            # Build keyboard: wide info button + compact delete icon
             keyboard = []
             for stone in page_stones:
+                history_count = len(stone.history)
                 keyboard.append([
-                    InlineKeyboardButton(f"📋 #{stone.id}", callback_data=f"stone_info:{stone.id}"),
-                    InlineKeyboardButton(f"🗑 #{stone.id}", callback_data=f"delete_ask:{stone.id}"),
+                    InlineKeyboardButton(f"📋 #{stone.id} {stone.name} ({history_count})", callback_data=f"stone_info:{stone.id}"),
+                    InlineKeyboardButton("🗑", callback_data=f"delete_ask:{stone.id}"),
                 ])
 
             # Navigation buttons
