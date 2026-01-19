@@ -150,6 +150,8 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
             ]
 
             # Build keyboard: single wide info button with fixed-width text
+            # Use figure space (U+2007) for padding - regular spaces collapse in Telegram
+            NBSP = "\u2007"  # Figure space - same width as digits
             BUTTON_WIDTH = 30  # Total visible characters for alignment
             keyboard = []
             for stone in page_stones:
@@ -162,8 +164,9 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
                     # Truncate with ".."
                     name_display = stone.name[:name_space - 2] + ".."
                 else:
-                    # Pad with spaces to fixed width
-                    name_display = stone.name.ljust(name_space)
+                    # Pad with figure spaces to fixed width
+                    padding = NBSP * (name_space - len(stone.name))
+                    name_display = stone.name + padding
                 button_text = f"{prefix}{name_display} {suffix}"
                 keyboard.append([
                     InlineKeyboardButton(button_text, callback_data=f"stone_info:{stone.id}"),
