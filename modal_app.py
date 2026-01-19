@@ -11,9 +11,11 @@ ml_image = (
     .pip_install(
         "torch",
         "open-clip-torch",
-        "rembg[gpu]",
+        "rembg",
+        "onnxruntime",  # Required by rembg
         "pillow",
         "numpy<2",
+        "fastapi",  # Required for web endpoints
     )
     .run_commands(
         # Pre-download models during image build
@@ -26,8 +28,7 @@ ml_image = (
 @app.cls(
     image=ml_image,
     gpu="T4",  # Cheapest GPU, sufficient for CLIP
-    container_idle_timeout=60,  # Keep warm for 60 seconds
-    allow_concurrent_inputs=10,  # Handle multiple requests
+    scaledown_window=60,  # Keep warm for 60 seconds
 )
 class MLService:
     """Serverless ML service for stone detection and embedding."""
@@ -190,8 +191,8 @@ class MLService:
 
 
 # Web endpoint for external access
-@app.function(image=ml_image)
-@modal.web_endpoint(method="POST")
+@app.function(image=ml_image, gpu="T4")
+@modal.fastapi_endpoint(method="POST")
 def process_image_api(image_base64: str) -> dict:
     """HTTP endpoint for processing images.
 
