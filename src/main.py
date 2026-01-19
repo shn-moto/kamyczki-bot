@@ -7,6 +7,7 @@ from src.config import settings
 from src.bot import setup_handlers
 from src.database import init_db
 from src.web import start_web_server
+from src.services.clip_service import get_clip_service
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -22,6 +23,11 @@ async def post_init(application: Application) -> None:
     """Initialize services after bot startup."""
     await init_db()
     logger.info("Database initialized")
+
+    # Pre-load CLIP model (heavy, do it once at startup)
+    logger.info("Loading CLIP model...")
+    get_clip_service()
+    logger.info("CLIP model loaded")
 
     # Set bot commands menu for each language
     # Note: /info and /delete require ID argument, so they're not in menu
