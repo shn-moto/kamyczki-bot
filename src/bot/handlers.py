@@ -150,18 +150,21 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
             ]
 
             # Build keyboard: single wide info button with fixed-width text
+            BUTTON_WIDTH = 30  # Total visible characters for alignment
             keyboard = []
             for stone in page_stones:
                 history_count = len(stone.history)
-                # Fixed width: "📋 #ID Name... (N)" - total ~30 chars for alignment
                 prefix = f"📋 #{stone.id} "
-                suffix = f" ({history_count})"
-                max_name_len = 25 - len(prefix) - len(suffix)
-                if len(stone.name) > max_name_len:
-                    name_display = stone.name[:max_name_len - 2] + ".."
+                suffix = f"({history_count})"
+                # Calculate space for name (including padding)
+                name_space = BUTTON_WIDTH - len(prefix) - len(suffix) - 1  # -1 for space before suffix
+                if len(stone.name) > name_space:
+                    # Truncate with ".."
+                    name_display = stone.name[:name_space - 2] + ".."
                 else:
-                    name_display = stone.name
-                button_text = f"{prefix}{name_display}{suffix}"
+                    # Pad with spaces to fixed width
+                    name_display = stone.name.ljust(name_space)
+                button_text = f"{prefix}{name_display} {suffix}"
                 keyboard.append([
                     InlineKeyboardButton(button_text, callback_data=f"stone_info:{stone.id}"),
                 ])
