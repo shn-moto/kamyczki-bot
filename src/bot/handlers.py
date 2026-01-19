@@ -150,8 +150,8 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
             ]
 
             # Build keyboard: single wide info button with fixed-width text
-            # Test with underscore to verify padding works
-            NBSP = "_"  # Temporary: underscore for testing
+            # Use low dot for padding (less intrusive than underscore)
+            NBSP = "."  # Low dot for visual padding
             BUTTON_WIDTH = 30  # Total visible characters for alignment
             keyboard = []
             for stone in page_stones:
