@@ -149,25 +149,11 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
                 get_text("page_info", user_id, page=page + 1, total=total_pages, count=total_stones)
             ]
 
-            # Build keyboard: single wide info button with fixed-width text
-            # Use low dot for padding (less intrusive than underscore)
-            NBSP = "."  # Low dot for visual padding
-            BUTTON_WIDTH = 30  # Total visible characters for alignment
+            # Build keyboard: single wide info button, no padding
             keyboard = []
             for stone in page_stones:
                 history_count = len(stone.history)
-                prefix = f"📋 #{stone.id} "
-                suffix = f"({history_count})"
-                # Calculate space for name (including padding)
-                name_space = BUTTON_WIDTH - len(prefix) - len(suffix) - 1  # -1 for space before suffix
-                if len(stone.name) > name_space:
-                    # Truncate with ".."
-                    name_display = stone.name[:name_space - 2] + ".."
-                else:
-                    # Pad with figure spaces to fixed width
-                    padding = NBSP * (name_space - len(stone.name))
-                    name_display = stone.name + padding
-                button_text = f"{prefix}{name_display} {suffix}"
+                button_text = f"📋 #{stone.id} {stone.name} ({history_count})"
                 keyboard.append([
                     InlineKeyboardButton(button_text, callback_data=f"stone_info:{stone.id}"),
                 ])
