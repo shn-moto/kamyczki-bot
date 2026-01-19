@@ -150,8 +150,8 @@ async def show_my_stones(update: Update, page: int = 0, edit_message: bool = Fal
             ]
 
             # Build keyboard: single wide info button with fixed-width text
-            # Use figure space (U+2007) for padding - regular spaces collapse in Telegram
-            NBSP = "\u2007"  # Figure space - same width as digits
+            # Test with underscore to verify padding works
+            NBSP = "_"  # Temporary: underscore for testing
             BUTTON_WIDTH = 30  # Total visible characters for alignment
             keyboard = []
             for stone in page_stones:
