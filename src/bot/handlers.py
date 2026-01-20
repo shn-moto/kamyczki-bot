@@ -41,7 +41,22 @@ WAITING_LOCATION = 3
 SIMILARITY_THRESHOLD = 0.82
 
 # Minimum similarity for text search results
-TEXT_SEARCH_MIN_SIMILARITY = 0.20
+TEXT_SEARCH_MIN_SIMILARITY = 0.25
+
+
+def translate_to_english(text: str) -> str:
+    """Translate text to English for better CLIP matching."""
+    try:
+        from deep_translator import GoogleTranslator
+        translator = GoogleTranslator(source="auto", target="en")
+        translated = translator.translate(text)
+        if translated and translated.lower() != text.lower():
+            logger.info(f"Translated search query: '{text}' -> '{translated}'")
+            return translated
+        return text
+    except Exception as e:
+        logger.warning(f"Translation failed: {e}")
+        return text
 
 # Pagination settings
 STONES_PER_PAGE = 10
@@ -948,8 +963,11 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     searching_msg = await update.message.reply_text(t("search_searching", update))
 
     try:
+        # Translate query to English for better CLIP matching
+        translated_query = translate_to_english(query)
+
         # Encode query to embedding
-        query_embedding = encode_text_query(query)
+        query_embedding = encode_text_query(translated_query)
 
         # Search
         results = await search_stones_by_text(query_embedding, limit=5)

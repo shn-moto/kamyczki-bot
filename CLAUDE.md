@@ -4,26 +4,40 @@ Telegram бот для отслеживания раскрашенных кам�
 
 ## Архитектура
 
+### Режимы работы
+
+Бот поддерживает два режима ML-обработки (переключается через `USE_LOCAL_ML`):
+
+1. **Local ML** (`USE_LOCAL_ML=true`) — CLIP + rembg запускаются локально
+2. **Modal Serverless** (`USE_LOCAL_ML=false`) — ML через Modal.com API (дорого из-за GPU)
+
+### Варианты деплоя
+
+1. **Локальный сервер** (основной) — `docker-compose.local.yml` + Neon PostgreSQL
+2. **Cloud Run** (бэкап) — CPU-only, auto-scaling, холодный старт ~2 мин
+
 ```
 src/
-├── main.py              # Точка входа, запуск бота + web сервера
+├── main.py              # Точка входа (polling mode)
+├── main_webhook.py      # Webhook mode для Docker/Cloud Run
 ├── config.py            # Pydantic Settings (.env)
 ├── bot/
-│   └── handlers.py      # Telegram ConversationHandler
+│   └── handlers.py      # Telegram ConversationHandler + /search
 ├── database/
-│   ├── models.py        # SQLAlchemy: Stone, StoneHistory
+│   ├── models.py        # SQLAlchemy: Stone, StoneHistory, UserSettings
 │   └── connection.py    # AsyncPG connection
 ├── i18n/
 │   ├── __init__.py      # Экспорт функций локализации
 │   └── translations.py  # Переводы (PL, EN, RU)
 ├── services/
-│   ├── clip_service.py  # CLIP ViT-B/32 + rembg кроп
+│   ├── clip_service.py  # CLIP ViT-B/32 + rembg кроп + encode_text_query
+│   ├── ml_service.py    # Унифицированный API (local/modal)
+│   ├── modal_client.py  # Клиент для Modal API
 │   ├── map_service.py   # Генерация PNG карты (staticmap)
 │   ├── geocoding.py     # Nominatim reverse/forward geocoding
 │   └── exif.py          # Извлечение GPS из EXIF
 └── web/
-    ├── app.py           # FastAPI приложение
-    ├── routes.py        # API endpoints для Mini App
+    ├── routes.py        # API endpoints для Mini App (/api prefix)
     └── static/
         ├── index.html   # Telegram Mini App (Leaflet.js)
         ├── map.js       # Инициализация карты
@@ -34,7 +48,7 @@ src/
 
 ### Существующий камень:
 1. Фото → `context.user_data.clear()` → **rembg кроп** → CLIP детекция
-2. Поиск по эмбеддингу (cosine similarity >= 0.83)
+2. Поиск по эмбеддингу (cosine similarity >= 0.82)
 3. **Миниатюра кропа** + "Камень найден!" + кнопки: геолокация / ZIP / пропустить
 4. Геолокация или ZIP код → геокодинг → добавление в историю
 5. "Сохранено!" + **PNG карта** + **кнопка интерактивной карты (Mini App)**
@@ -43,6 +57,11 @@ src/
 1. Фото → **rembg кроп** → CLIP детекция → эмбеддинг
 2. **Миниатюра кропа** + "Новый камень!" → ввод имени → описание (опционально)
 3. Геолокация или ZIP код → регистрация в БД → **вывод ID камня**
+
+### Текстовый поиск (/search):
+1. Запрос → **перевод на английский** (GoogleTranslator) → CLIP encode_text
+2. Поиск по cosine similarity (порог 0.25)
+3. Вывод топ-5 результатов с фото и similarity score
 
 ## Умный кроп камня
 
@@ -54,6 +73,22 @@ src/
   - Возвращает кроп + миниатюру 200x200
 - Эмбеддинг создаётся из кропнутого изображения (лучше качество поиска)
 - Миниатюра отправляется пользователю для визуальной проверки
+
+## Текстовый поиск (CLIP text-to-image)
+
+- **Команда:** `/search <описание>` (например: `/search синяя бабочка`)
+- **Перевод:** Автоматический перевод на английский через `deep-translator` (GoogleTranslator)
+  - CLIP обучен на английских текстах, перевод улучшает качество поиска
+- **Порог similarity:** 0.25 (ниже чем для image-to-image, т.к. text-to-image менее точный)
+- **Результат:** Топ-5 камней с фото и процентом сходства
+
+```python
+# handlers.py
+def translate_to_english(text: str) -> str:
+    from deep_translator import GoogleTranslator
+    translator = GoogleTranslator(source="auto", target="en")
+    return translator.translate(text)
+```
 
 ## Карта перемещений
 
@@ -67,26 +102,12 @@ src/
 
 ## Telegram Mini App (интерактивная карта)
 
-- **FastAPI** web сервер в отдельном daemon-потоке
+- **FastAPI** web сервер (uvicorn)
 - **Leaflet.js** для интерактивной карты с OSM тайлами
 - Кнопка "🗺 Интерактивная карта" открывает Mini App в Telegram
 - API endpoint: `GET /api/stones/{stone_id}/map-data`
+- Static files: `/static/index.html`
 - Требует HTTPS для работы в Telegram
-
-### HTTPS туннель для разработки
-
-```bash
-# cloudflared (без регистрации)
-"C:\Program Files (x86)\cloudflared\cloudflared.exe" tunnel --url http://localhost:8080
-
-# или ngrok (требует authtoken)
-ngrok http 8080
-```
-
-URL туннеля указывается в `.env`:
-```
-WEBAPP_BASE_URL=https://xxx.trycloudflare.com
-```
 
 ### Изоляция event loop
 
@@ -114,10 +135,16 @@ def get_web_session():
 
 ## База данных
 
-- **PostgreSQL 16 + pgvector** (docker-compose.yml)
+- **Neon.tech PostgreSQL** (serverless, внешняя БД)
 - Таблица `stones`: id, name, description, photo_file_id, embedding(512), registered_by_user_id
 - Таблица `stone_history`: id, stone_id, telegram_user_id, photo_file_id, lat, lon, zip_code, created_at
 - Таблица `user_settings`: telegram_user_id, language, created_at, updated_at
+
+### Подключение к Neon
+
+```
+DATABASE_URL=postgresql+asyncpg://user:pass@ep-xxx.eu-central-1.aws.neon.tech/neondb?ssl=require
+```
 
 ### Хранение фото
 
@@ -125,14 +152,14 @@ def get_web_session():
 
 ## Ключевые параметры
 
-- `SIMILARITY_THRESHOLD = 0.82` (handlers.py) — порог для распознавания
+- `SIMILARITY_THRESHOLD = 0.82` (handlers.py) — порог для image-to-image поиска
+- `TEXT_SEARCH_MIN_SIMILARITY = 0.25` (handlers.py) — порог для text-to-image поиска
 - `STONES_PER_PAGE = 10` (handlers.py) — камней на странице в /mine
 - CLIP модель: `ViT-B-32` pretrained `laion2b_s34b_b79k` — 512-dim vectors
 - Stone detection threshold: `0.05` (clip_service.py)
-- Web server port: `8080` (config.py: `web_port`)
-- Mini App URL: `.env` → `WEBAPP_BASE_URL`
+- Web server port: `8080`
 
-### Подбор порога similarity
+### Подбор порога similarity (image-to-image)
 
 Тестирование на 22 камнях показало:
 - **Идентичный камень** (разные фото): ~0.85-0.99
@@ -145,9 +172,7 @@ def get_web_session():
 | 0.88 | Пропускает матчи |
 | 0.85 | Пропускает матчи |
 | 0.84 | Пропускает матчи |
-| **0.83** | ✅ Оптимальный баланс |
-
-Зазор между "свой" и "чужой" камень ~0.02, подбор порога критичен.
+| **0.82** | ✅ Оптимальный баланс |
 
 ## Векторный поиск с HNSW индексом
 
@@ -159,10 +184,6 @@ ON stones USING hnsw (embedding vector_cosine_ops)
 WITH (m = 16, ef_construction = 64);
 ```
 
-**Параметры индекса:**
-- `m = 16` — число связей на узел (больше = точнее, но больше памяти)
-- `ef_construction = 64` — размер динамического списка при построении
-
 **Сложность поиска:** O(log n) вместо O(n).
 
 ### Особенности asyncpg + pgvector
@@ -171,15 +192,14 @@ SQLAlchemy ORM `order_by(Stone.embedding.cosine_distance(list))` не работ
 
 **Решение:** raw SQL с `text()` и явным приведением к `::vector`:
 ```python
-result = await session.execute(
-    text("""
-        SELECT *, 1 - (embedding <=> :embedding::vector) as similarity
-        FROM stones
-        ORDER BY embedding <=> :embedding::vector
-        LIMIT 1
-    """),
-    {"embedding": "[0.1,0.2,...]"}  # строка в формате PostgreSQL array
-)
+embedding_str = "[" + ",".join(str(x) for x in embedding) + "]"
+query = f"""
+    SELECT *, 1 - (embedding <=> '{embedding_str}'::vector) as similarity
+    FROM stones
+    ORDER BY embedding <=> '{embedding_str}'::vector
+    LIMIT 1
+"""
+result = await session.execute(text(query))
 ```
 
 ## Известные проблемы и решения
@@ -189,78 +209,86 @@ torch и open-clip скомпилированы с NumPy 1.x. Решение: `n
 
 ### uvloop конфликт с telegram bot
 uvicorn[standard] включает uvloop, который патчит `asyncio.get_event_loop()` глобально. Решения:
-- `loop="asyncio"` в `uvicorn.run()` (web/app.py)
-- `asyncio.set_event_loop(asyncio.new_event_loop())` перед запуском (main.py)
+- `loop="asyncio"` в `uvicorn.run()` (main_webhook.py)
+- `asyncio.set_event_loop(asyncio.new_event_loop())` перед запуском
+
+### Modal GPU слишком дорогой
+Modal.com берёт деньги за idle GPU время в `scaledown_window`. При keep_warm=1 это ~$425/месяц. Решение: использовать локальный CPU сервер.
+
+## Переменные окружения
+
+```bash
+# Обязательные
+TELEGRAM_BOT_TOKEN=xxx
+DATABASE_URL=postgresql+asyncpg://...
+
+# Режим работы
+USE_LOCAL_ML=true          # true = локальный CLIP, false = Modal API
+USE_WEBHOOK=true           # true = webhook mode, false = polling
+
+# Webhook (для Docker)
+WEBHOOK_URL=https://xxx.trycloudflare.com  # БЕЗ /webhook в конце!
+WEBAPP_BASE_URL=https://xxx.trycloudflare.com
+
+# Modal (если USE_LOCAL_ML=false)
+MODAL_ENDPOINT_URL=https://xxx.modal.run
+```
 
 ## Развертывание
 
-- **Репозиторий:** https://github.com/shn-moto/kamyczki-bot
-- **Сервер развертывания:** `192.168.1.107` (Linux Mint, Docker)
-
-## Запуск
-
-### Docker (рекомендуется)
+### Локальный сервер (основной вариант)
 
 ```bash
-# Клонировать и настроить
-git clone https://github.com/shn-moto/kamyczki-bot.git
-cd kamyczki-bot
-cp .env.example .env
-nano .env  # установить TELEGRAM_BOT_TOKEN
-
-# Запустить всё (postgres + bot + cloudflared)
-docker compose up -d
-
-# Посмотреть URL туннеля
-docker compose logs cloudflared | grep trycloudflare
-
-# Логи бота
-docker compose logs -f kamyczki-bot
-```
-
-**Первый запуск:** CLIP и rembg скачивают модели (~1-2GB), это занимает время. Модели кэшируются в Docker volume.
-
-**Обновление кода (без изменения зависимостей):**
-```bash
+# На сервере
+cd /home/oem/PRG/kamyczki/kamyczki-bot
 git pull
-docker compose build bot
-docker compose up -d
+
+# Настроить .env.local
+cp .env.local.example .env.local
+nano .env.local  # заполнить переменные
+
+# Запустить
+docker compose -f docker-compose.local.yml up -d --build
+
+# Получить URL туннеля
+docker logs kamyczki-tunnel 2>&1 | grep trycloudflare
+
+# Добавить URL в .env.local и перезапустить
+docker compose -f docker-compose.local.yml up -d --force-recreate bot
+
+# Логи
+docker logs kamyczki-bot-local --tail 50
 ```
 
-**Полная пересборка (при изменении requirements.txt):**
-```bash
-docker compose build --no-cache bot
-docker compose up -d
-```
-
-**Архитектура Docker:**
+**Архитектура:**
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ cloudflared │────▶│     bot     │────▶│  postgres   │
-│   HTTPS     │     │   :8080     │     │   pgvector  │
+│ cloudflared │────▶│     bot     │────▶│    Neon     │
+│   HTTPS     │     │   :8080     │     │  PostgreSQL │
 └─────────────┘     └─────────────┘     └─────────────┘
+      ↑                                       │
+  Telegram                              (external DB)
 ```
 
-### Локальная разработка (Windows)
+### Cloud Run (бэкап)
 
 ```bash
-# База данных
-docker compose up -d postgres
+# Деплой
+gcloud run deploy kamyczki-bot-cpu \
+  --source . \
+  --region europe-central2 \
+  --allow-unauthenticated \
+  --set-env-vars "USE_LOCAL_ML=true,USE_WEBHOOK=true"
 
-# Бот
-.venv\Scripts\python.exe -m src.main
-
-# Рестарт — убивает все python.exe, запускает бота в фоне
-restart.bat
+# Остановить (0 instances)
+gcloud run services update kamyczki-bot-cpu --region europe-central2 --max-instances=0
 ```
 
-Лог-файл: `logs/bot.log`
-
-### Linux (systemd)
+### GPU версия (GTX 1070)
 
 ```bash
-sudo bash deploy/install.sh
-sudo systemctl start cloudflared kamyczki-bot
+# С GPU override
+docker compose -f docker-compose.local.yml -f docker-compose.gpu.yml up -d --build
 ```
 
 ## Локализация (i18n)
@@ -275,6 +303,7 @@ sudo systemctl start cloudflared kamyczki-bot
 - `/start` — приветствие
 - `/help` — справка
 - `/mine` — список камней пользователя с пагинацией (10 на страницу)
+- `/search <описание>` — поиск камней по текстовому описанию
 - `/info <id>` — информация о камне по ID (фото, карта)
 - `/delete <id>` — удаление камня с подтверждением
 - `/lang` — смена языка интерфейса
@@ -289,7 +318,13 @@ sudo systemctl start cloudflared kamyczki-bot
 - [x] ~~Локализация (i18n)~~ (PL, EN, RU)
 - [x] ~~Оптимизация поиска~~ (HNSW индекс, O(log n) вместо O(n))
 - [x] ~~Сохранение языка пользователя в БД~~ (таблица user_settings)
+- [x] ~~Serverless архитектура~~ (Neon DB + local server + Cloud Run backup)
+- [x] ~~Текстовый поиск~~ (/search с переводом через GoogleTranslator)
+- [ ] Голосовой поиск (speech-to-text → text search)
+- [ ] Inline mode (@bot_name butterfly)
 
 ## Отброшенные идеи
 
-- **Извлечение GPS из EXIF** — Telegram удаляет EXIF-метаданные из фото при загрузке. Вместо этого используется явная передача геолокации или ввод ZIP кода.
+- **Извлечение GPS из EXIF** — Telegram удаляет EXIF-метаданные из фото при загрузке
+- **Modal.com GPU** — слишком дорого (~$425/месяц за keep_warm), CPU на Xeon быстрее чем Cloud Run
+- **Локальная PostgreSQL в Docker** — перешли на Neon.tech для serverless
