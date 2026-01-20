@@ -108,6 +108,7 @@ TEXTS = {
             "/start - Rozpocznij pracę z botem\n"
             "/help - Pokaż pomoc\n"
             "/mine - Moje kamyki\n"
+            "/search <opis> - Szukaj kamyka po opisie\n"
             "/info <id> - Informacje o kamyku\n"
             "/delete <id> - Usuń kamyk\n"
             "/lang - Zmień język\n"
@@ -186,9 +187,17 @@ TEXTS = {
         "btn_cancel_delete": "❌ Anuluj",
         "btn_delete": "🗑 Usuń kamyk",
 
+        # Search
+        "search_prompt": "Użycie: /search <opis>\nPrzykład: /search motyl niebieski",
+        "search_searching": "🔍 Szukam...",
+        "search_results": "🔍 Znaleziono {count} kamyk(ów) dla «{query}»:",
+        "search_no_results": "❌ Nie znaleziono kamyków pasujących do opisu.",
+        "search_similarity": "Podobieństwo",
+
         # Errors
         "error_photo": "❌ Wystąpił błąd podczas przetwarzania zdjęcia. Spróbuj ponownie.",
         "error_generic": "❌ Wystąpił błąd. Spróbuj ponownie.",
+        "error_occurred": "❌ Wystąpił błąd. Spróbuj ponownie.",
         "cancelled": "Operacja anulowana.",
     },
 
@@ -205,6 +214,7 @@ TEXTS = {
             "/start - Start the bot\n"
             "/help - Show help\n"
             "/mine - My rocks\n"
+            "/search <desc> - Search rocks by description\n"
             "/info <id> - Rock information\n"
             "/delete <id> - Delete a rock\n"
             "/lang - Change language\n"
@@ -283,9 +293,17 @@ TEXTS = {
         "btn_cancel_delete": "❌ Cancel",
         "btn_delete": "🗑 Delete rock",
 
+        # Search
+        "search_prompt": "Usage: /search <description>\nExample: /search blue butterfly",
+        "search_searching": "🔍 Searching...",
+        "search_results": "🔍 Found {count} rock(s) for «{query}»:",
+        "search_no_results": "❌ No rocks found matching the description.",
+        "search_similarity": "Similarity",
+
         # Errors
         "error_photo": "❌ Error processing photo. Please try again.",
         "error_generic": "❌ An error occurred. Please try again.",
+        "error_occurred": "❌ An error occurred. Please try again.",
         "cancelled": "Operation cancelled.",
     },
 
@@ -302,6 +320,7 @@ TEXTS = {
             "/start - Начать работу с ботом\n"
             "/help - Показать справку\n"
             "/mine - Мои камни\n"
+            "/search <описание> - Поиск камней по описанию\n"
             "/info <id> - Информация о камне\n"
             "/delete <id> - Удалить камень\n"
             "/lang - Сменить язык\n"
@@ -381,9 +400,17 @@ TEXTS = {
         "btn_cancel_delete": "❌ Отмена",
         "btn_delete": "🗑 Удалить камень",
 
+        # Search
+        "search_prompt": "Использование: /search <описание>\nПример: /search синяя бабочка",
+        "search_searching": "🔍 Ищу...",
+        "search_results": "🔍 Найдено {count} камень(ей) по запросу «{query}»:",
+        "search_no_results": "❌ Камни по описанию не найдены.",
+        "search_similarity": "Сходство",
+
         # Errors
         "error_photo": "❌ Произошла ошибка при обработке фото. Попробуйте снова.",
         "error_generic": "❌ Произошла ошибка. Попробуйте снова.",
+        "error_occurred": "❌ Произошла ошибка. Попробуйте снова.",
         "cancelled": "Операция отменена.",
     },
 }

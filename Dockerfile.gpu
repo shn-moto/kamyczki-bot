@@ -1,0 +1,39 @@
+# Dockerfile for local development with NVIDIA GPU (GTX 1070, etc.)
+# Requires: nvidia-docker2 or Docker Desktop with GPU support
+
+FROM nvidia/cuda:11.8-cudnn8-runtime-ubuntu22.04
+
+WORKDIR /app
+
+# Install Python 3.11 and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-venv \
+    python3-pip \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
+
+# Install PyTorch with CUDA support first
+RUN pip install --no-cache-dir \
+    torch==2.2.0+cu118 \
+    torchvision==0.17.0+cu118 \
+    --index-url https://download.pytorch.org/whl/cu118
+
+# Install other dependencies
+COPY requirements-gpu.txt .
+RUN pip install --no-cache-dir -r requirements-gpu.txt
+
+# Pre-download models during build
+RUN python -c "import open_clip; open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')"
+RUN python -c "from rembg import new_session; new_session('u2net')"
+
+# Copy application code
+COPY src/ ./src/
+
+ENV PORT=8080
+ENV USE_LOCAL_ML=true
+ENV NVIDIA_VISIBLE_DEVICES=all
+
+CMD ["python", "-m", "uvicorn", "src.main_webhook:app", "--host", "0.0.0.0", "--port", "8080"]

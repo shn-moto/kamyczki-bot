@@ -31,7 +31,7 @@ async def process_image_remote(image_bytes: bytes) -> dict:
 
     image_base64 = base64.b64encode(image_bytes).decode()
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
+    async with httpx.AsyncClient(timeout=180.0) as client:  # Long timeout for cold start
         response = await client.post(
             MODAL_ENDPOINT,
             json={"image_base64": image_base64},
