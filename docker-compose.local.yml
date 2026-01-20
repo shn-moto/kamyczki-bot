@@ -1,0 +1,35 @@
+# Docker Compose for local development with external Neon database
+#
+# Usage:
+#   CPU version:  docker compose -f docker-compose.local.yml up --build
+#   GPU version:  docker compose -f docker-compose.local.yml -f docker-compose.gpu.yml up --build
+#
+# First time setup:
+#   1. Copy .env.local.example to .env.local
+#   2. Fill in your TELEGRAM_BOT_TOKEN and DATABASE_URL (Neon)
+#   3. Run: docker compose -f docker-compose.local.yml up --build
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: kamyczki-bot-local
+    env_file:
+      - .env.local
+    environment:
+      - USE_LOCAL_ML=true
+      - USE_WEBHOOK=true
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  # Cloudflared tunnel for webhook (exposes bot to internet)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: kamyczki-tunnel
+    command: tunnel --no-autoupdate --url http://bot:8080
+    depends_on:
+      - bot
+    restart: unless-stopped

@@ -23,7 +23,7 @@ from sqlalchemy.orm import selectinload
 
 from src.config import settings
 from src.services.exif import get_exif_gps
-from src.services.ml_service import process_image
+from src.services.ml_service import process_image, encode_text_query
 from src.services.geocoding import get_location_from_gps, get_coords_from_zip
 from src.services.map_service import generate_stone_map_image
 from src.database.connection import async_session
@@ -37,8 +37,11 @@ WAITING_NAME = 1
 WAITING_DESCRIPTION = 2
 WAITING_LOCATION = 3
 
-# Similarity threshold for finding existing stones
+# Similarity threshold for finding existing stones (image-to-image)
 SIMILARITY_THRESHOLD = 0.82
+
+# Minimum similarity for text search results
+TEXT_SEARCH_MIN_SIMILARITY = 0.20
 
 # Pagination settings
 STONES_PER_PAGE = 10
@@ -804,19 +807,20 @@ async def find_similar_stone(embedding: list[float]) -> Stone | None:
 
             # Use raw SQL with text() to properly pass vector parameter
             # This allows pgvector to use the HNSW index for fast ANN search
-            from sqlalchemy import text, bindparam
+            from sqlalchemy import text
 
-            result = await session.execute(
-                text("""
-                    SELECT id, name, description, photo_file_id, embedding,
-                           registered_by_user_id, created_at,
-                           1 - (embedding <=> CAST(:embedding AS vector)) as similarity
-                    FROM stones
-                    WHERE embedding IS NOT NULL
-                    ORDER BY embedding <=> CAST(:embedding AS vector)
-                    LIMIT 1
-                """).bindparams(bindparam("embedding", value=embedding_str, literal_execute=True))
-            )
+            # Use raw SQL - asyncpg needs the vector as a string literal in the query
+            # We use format string here but the embedding is from our trusted ML model
+            query = f"""
+                SELECT id, name, description, photo_file_id, embedding,
+                       registered_by_user_id, created_at,
+                       1 - (embedding <=> '{embedding_str}'::vector) as similarity
+                FROM stones
+                WHERE embedding IS NOT NULL
+                ORDER BY embedding <=> '{embedding_str}'::vector
+                LIMIT 1
+            """
+            result = await session.execute(text(query))
             row = result.fetchone()
 
             if not row:
@@ -891,6 +895,95 @@ async def add_to_history(
         await session.commit()
 
 
+async def search_stones_by_text(query_embedding: list[float], limit: int = 5) -> list[tuple[Stone, float]]:
+    """Search stones by text query embedding.
+
+    Returns list of (Stone, similarity) tuples ordered by similarity.
+    """
+    try:
+        async with async_session() as session:
+            from sqlalchemy import text
+
+            embedding_str = "[" + ",".join(str(x) for x in query_embedding) + "]"
+
+            query = f"""
+                SELECT id, name, description, photo_file_id,
+                       1 - (embedding <=> '{embedding_str}'::vector) as similarity
+                FROM stones
+                WHERE embedding IS NOT NULL
+                ORDER BY embedding <=> '{embedding_str}'::vector
+                LIMIT {limit}
+            """
+            result = await session.execute(text(query))
+            rows = result.fetchall()
+
+            stones_with_similarity = []
+            for row in rows:
+                if row.similarity >= TEXT_SEARCH_MIN_SIMILARITY:
+                    stone_result = await session.execute(
+                        select(Stone).where(Stone.id == row.id)
+                    )
+                    stone = stone_result.scalar_one()
+                    stones_with_similarity.append((stone, row.similarity))
+
+            return stones_with_similarity
+
+    except Exception as e:
+        logger.error(f"Text search error: {e}", exc_info=True)
+        return []
+
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /search command - find stones by text description."""
+    user_id = update.effective_user.id
+    await load_user_language(user_id)
+
+    query = " ".join(context.args) if context.args else ""
+
+    if not query:
+        await update.message.reply_text(t("search_prompt", update))
+        return
+
+    # Show "searching" message
+    searching_msg = await update.message.reply_text(t("search_searching", update))
+
+    try:
+        # Encode query to embedding
+        query_embedding = encode_text_query(query)
+
+        # Search
+        results = await search_stones_by_text(query_embedding, limit=5)
+
+        # Delete "searching" message
+        await searching_msg.delete()
+
+        if not results:
+            await update.message.reply_text(t("search_no_results", update))
+            return
+
+        # Send results header
+        await update.message.reply_text(
+            t("search_results", update, count=len(results), query=query)
+        )
+
+        # Send each result with photo
+        for stone, similarity in results:
+            caption = f"🪨 *{stone.name}*\n📊 {t('search_similarity', update)}: {similarity:.0%}"
+            if stone.description:
+                caption += f"\n📝 {stone.description}"
+            caption += f"\n🆔 `{stone.id}`"
+
+            await update.message.reply_photo(
+                stone.photo_file_id,
+                caption=caption,
+                parse_mode="Markdown"
+            )
+
+    except Exception as e:
+        logger.error(f"Search error: {e}", exc_info=True)
+        await searching_msg.edit_text(t("error_occurred", update))
+
+
 def setup_handlers(app: Application) -> None:
     """Register all handlers."""
     conv_handler = ConversationHandler(
@@ -912,6 +1005,7 @@ def setup_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("mine", mine_command))
     app.add_handler(CommandHandler("info", info_command))
     app.add_handler(CommandHandler("delete", delete_command))
+    app.add_handler(CommandHandler("search", search_command))
     app.add_handler(CallbackQueryHandler(lang_callback, pattern="^lang:"))
     app.add_handler(CallbackQueryHandler(mine_page_callback, pattern="^mine_page:"))
     app.add_handler(CallbackQueryHandler(stone_info_callback, pattern="^stone_info:"))

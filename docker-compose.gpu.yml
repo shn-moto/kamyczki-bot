@@ -1,0 +1,21 @@
+# GPU override for docker-compose.local.yml
+#
+# Usage: docker compose -f docker-compose.local.yml -f docker-compose.gpu.yml up --build
+#
+# Requirements:
+#   - NVIDIA GPU (GTX 1070 or better)
+#   - nvidia-docker2 or Docker Desktop with GPU support
+#   - NVIDIA drivers installed on host
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

@@ -28,7 +28,7 @@ ml_image = (
 @app.cls(
     image=ml_image,
     gpu="T4",  # Cheapest GPU, sufficient for CLIP
-    scaledown_window=60,  # Keep warm for 60 seconds
+    scaledown_window=300,  # Keep warm for 5 minutes between requests
 )
 class MLService:
     """Serverless ML service for stone detection and embedding."""
@@ -189,28 +189,102 @@ class MLService:
             "cuda_available": torch.cuda.is_available(),
         }
 
+    @modal.fastapi_endpoint(method="POST")
+    def process_image_api(self, request: dict) -> dict:
+        """HTTP endpoint for processing images.
 
-# Web endpoint for external access
-@app.function(image=ml_image, gpu="T4")
-@modal.fastapi_endpoint(method="POST")
-def process_image_api(image_base64: str) -> dict:
-    """HTTP endpoint for processing images.
+        Accepts JSON with base64-encoded image, returns processing result.
+        Uses the same container with pre-loaded models.
+        """
+        import base64
 
-    Accepts base64-encoded image, returns processing result.
-    """
-    import base64
+        image_bytes = base64.b64decode(request["image_base64"])
+        result = self.process_image_local(image_bytes)
 
-    image_bytes = base64.b64decode(image_base64)
-    service = MLService()
-    result = service.process_image.remote(image_bytes)
+        # Encode binary data as base64 for JSON response
+        if result["cropped_image"]:
+            result["cropped_image"] = base64.b64encode(result["cropped_image"]).decode()
+        if result["thumbnail"]:
+            result["thumbnail"] = base64.b64encode(result["thumbnail"]).decode()
 
-    # Encode binary data as base64 for JSON response
-    if result["cropped_image"]:
-        result["cropped_image"] = base64.b64encode(result["cropped_image"]).decode()
-    if result["thumbnail"]:
-        result["thumbnail"] = base64.b64encode(result["thumbnail"]).decode()
+        return result
 
-    return result
+    def process_image_local(self, image_bytes: bytes) -> dict:
+        """Process image locally (same container, no RPC overhead)."""
+        import torch
+        from PIL import Image
+        from io import BytesIO
+        from rembg import remove
+
+        # Step 1: Smart crop with rembg
+        image = Image.open(BytesIO(image_bytes)).convert("RGBA")
+        result = remove(image, session=self.rembg_session)
+
+        bbox = result.getbbox()
+        if not bbox:
+            return {
+                "is_stone": False,
+                "confidence": 0.0,
+                "embedding": None,
+                "cropped_image": None,
+                "thumbnail": None,
+            }
+
+        # Crop with padding
+        padding = 20
+        x1, y1, x2, y2 = bbox
+        x1 = max(0, x1 - padding)
+        y1 = max(0, y1 - padding)
+        x2 = min(result.width, x2 + padding)
+        y2 = min(result.height, y2 + padding)
+
+        original = Image.open(BytesIO(image_bytes)).convert("RGB")
+        cropped = original.crop((x1, y1, x2, y2))
+
+        # Save cropped image
+        output = BytesIO()
+        cropped.save(output, format="JPEG", quality=90)
+        cropped_bytes = output.getvalue()
+
+        # Create thumbnail
+        thumbnail = cropped.copy()
+        thumbnail.thumbnail((200, 200), Image.LANCZOS)
+        thumb_output = BytesIO()
+        thumbnail.save(thumb_output, format="JPEG", quality=85)
+        thumbnail_bytes = thumb_output.getvalue()
+
+        # Step 2: Stone detection with CLIP
+        image_input = self.preprocess(cropped).unsqueeze(0).to(self.device)
+
+        with torch.no_grad():
+            image_features = self.model.encode_image(image_input)
+            image_features /= image_features.norm(dim=-1, keepdim=True)
+
+            stone_similarity = (image_features @ self.stone_text_features.T).mean().item()
+            not_stone_similarity = (image_features @ self.not_stone_text_features.T).mean().item()
+
+        score = stone_similarity - not_stone_similarity
+        is_stone = score > 0.05
+
+        if not is_stone:
+            return {
+                "is_stone": False,
+                "confidence": score,
+                "embedding": None,
+                "cropped_image": cropped_bytes,
+                "thumbnail": thumbnail_bytes,
+            }
+
+        # Step 3: Get embedding for stone matching
+        embedding = image_features.cpu().numpy().flatten().tolist()
+
+        return {
+            "is_stone": True,
+            "confidence": score,
+            "embedding": embedding,
+            "cropped_image": cropped_bytes,
+            "thumbnail": thumbnail_bytes,
+        }
 
 
 # For local testing

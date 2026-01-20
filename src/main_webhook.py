@@ -30,6 +30,7 @@ async def setup_bot_commands(bot):
         BotCommand("start", "Rozpocznij"),
         BotCommand("help", "Pomoc"),
         BotCommand("mine", "Moje kamyki"),
+        BotCommand("search", "Szukaj po opisie"),
         BotCommand("lang", "Zmień język"),
         BotCommand("cancel", "Anuluj"),
     ]
@@ -37,6 +38,7 @@ async def setup_bot_commands(bot):
         BotCommand("start", "Start"),
         BotCommand("help", "Help"),
         BotCommand("mine", "My rocks"),
+        BotCommand("search", "Search by description"),
         BotCommand("lang", "Change language"),
         BotCommand("cancel", "Cancel"),
     ]
@@ -44,6 +46,7 @@ async def setup_bot_commands(bot):
         BotCommand("start", "Начать"),
         BotCommand("help", "Справка"),
         BotCommand("mine", "Мои камни"),
+        BotCommand("search", "Поиск по описанию"),
         BotCommand("lang", "Сменить язык"),
         BotCommand("cancel", "Отмена"),
     ]
@@ -84,14 +87,17 @@ async def lifespan(app: FastAPI):
     await setup_bot_commands(ptb_app.bot)
     logger.info("Bot commands menu set")
 
-    # Set webhook
-    webhook_url = f"{settings.webhook_url}/webhook"
-    await ptb_app.bot.set_webhook(
-        url=webhook_url,
-        secret_token=settings.webhook_secret,
-        drop_pending_updates=True,
-    )
-    logger.info(f"Webhook set: {webhook_url}")
+    # Set webhook (only if WEBHOOK_URL is configured)
+    if settings.webhook_url:
+        webhook_url = f"{settings.webhook_url}/webhook"
+        await ptb_app.bot.set_webhook(
+            url=webhook_url,
+            secret_token=settings.webhook_secret,
+            drop_pending_updates=True,
+        )
+        logger.info(f"Webhook set: {webhook_url}")
+    else:
+        logger.warning("WEBHOOK_URL not set - webhook not configured. Set it and restart.")
 
     yield
 
@@ -135,9 +141,15 @@ async def root():
     return {"service": "kamyczki-bot", "mode": "webhook"}
 
 
-# Include Mini App routes
+# Include Mini App routes with /api prefix
 from src.web.routes import router as web_router
-app.include_router(web_router)
+app.include_router(web_router, prefix="/api")
+
+# Serve static files for Mini App
+from fastapi.staticfiles import StaticFiles
+import os
+static_dir = os.path.join(os.path.dirname(__file__), "web", "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 if __name__ == "__main__":

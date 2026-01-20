@@ -1,15 +1,19 @@
-# Dockerfile for Cloud Run with ML on CPU (all-in-one)
+# Dockerfile for local development with optional GPU support
+# Usage:
+#   CPU:  docker compose -f docker-compose.local.yml up
+#   GPU:  docker compose -f docker-compose.local.yml --profile gpu up
+
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for rembg/onnx
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies (CPU version by default)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -20,9 +24,8 @@ RUN python -c "from rembg import new_session; new_session('u2net')"
 # Copy application code
 COPY src/ ./src/
 
-# Cloud Run uses PORT env variable
 ENV PORT=8080
 ENV USE_LOCAL_ML=true
 
-# Run webhook server
+# Use webhook mode (same as Cloud Run)
 CMD ["python", "-m", "uvicorn", "src.main_webhook:app", "--host", "0.0.0.0", "--port", "8080"]

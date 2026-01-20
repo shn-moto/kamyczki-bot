@@ -74,6 +74,17 @@ class CLIPService:
 
         return image_features.cpu().numpy().flatten().tolist()
 
+    def encode_text_query(self, text: str) -> list[float]:
+        """Encode text query to embedding for semantic search (512 dimensions).
+
+        Used for text-to-image search: find stones matching a description.
+        """
+        tokens = self.tokenizer([text]).to(self.device)
+        with torch.no_grad():
+            text_features = self.model.encode_text(tokens)
+            text_features /= text_features.norm(dim=-1, keepdim=True)
+        return text_features.cpu().numpy().flatten().tolist()
+
     def smart_crop_stone(self, image_bytes: bytes) -> tuple[bytes, bytes] | None:
         """Умный кроп камня через удаление фона (rembg).
 

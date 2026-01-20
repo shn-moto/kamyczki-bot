@@ -77,6 +77,27 @@ async def _process_modal(image_bytes: bytes) -> dict:
     return await process_image_remote(image_bytes)
 
 
+def encode_text_query(text: str) -> list[float]:
+    """Encode text query to embedding for semantic search.
+
+    Args:
+        text: Search query (e.g., "butterfly", "red flower")
+
+    Returns:
+        512-dimensional embedding vector
+    """
+    if settings.use_local_ml:
+        from src.services.clip_service import get_clip_service
+        clip = get_clip_service()
+        return clip.encode_text_query(text)
+    else:
+        # Modal backend - for now fall back to local
+        # TODO: Add Modal endpoint for text encoding if needed
+        from src.services.clip_service import get_clip_service
+        clip = get_clip_service()
+        return clip.encode_text_query(text)
+
+
 def preload_models():
     """Pre-load models at startup (only for local mode)."""
     if settings.use_local_ml:
