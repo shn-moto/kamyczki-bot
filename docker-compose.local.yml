@@ -21,8 +21,7 @@ services:
       - USE_LOCAL_ML=true
       - USE_WEBHOOK=true
       - PORT=8080
-    ports:
-      - "8080:8080"
+    # ports not needed - cloudflared connects via internal Docker network
     restart: unless-stopped
 
   # Cloudflared tunnel for webhook (exposes bot to internet)
