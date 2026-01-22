@@ -4,7 +4,15 @@ from sqlalchemy import text
 from src.config import settings
 from src.database.models import Base
 
-engine = create_async_engine(settings.db_url, echo=False)
+engine = create_async_engine(
+    settings.db_url,
+    echo=False,
+    # ПАРАМЕТРЫ ДЛЯ СТАБИЛЬНОСТИ:
+    pool_pre_ping=True,       # Проверяет соединение перед каждым запросом
+    pool_recycle=300,         # Пересоздает соединение каждые 5 минут
+    pool_size=5,              # Базовое количество соединений
+    max_overflow=10           # Дополнительные соединения при нагрузке
+)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
