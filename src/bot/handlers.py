@@ -17,6 +17,7 @@ from telegram.ext import (
     ContextTypes,
 )
 import logging
+import os
 from io import BytesIO
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
@@ -719,8 +720,14 @@ async def _send_stone_map_impl(message, user_id: int, stone_id: int) -> None:
             if stone and stone.history:
                 map_image = generate_stone_map_image(stone.history, stone.name)
                 if map_image:
-                    if settings.webapp_base_url:
-                        webapp_url = f"{settings.webapp_base_url}/static/index.html?stone_id={stone_id}"
+                    # Сначала проверяем динамический URL от туннеля, если пусто — берем из конфига
+                    current_base_url = os.environ.get("WEBHOOK_URL") or settings.webapp_base_url
+                    
+                    if current_base_url:
+                        # Убираем лишний слеш в конце, если он есть, для корректного пути
+                        current_base_url = current_base_url.rstrip('/')
+                        webapp_url = f"{current_base_url}/static/index.html?stone_id={stone_id}"
+                        
                         keyboard = InlineKeyboardMarkup([
                             [InlineKeyboardButton(
                                 get_text("interactive_map", user_id),
@@ -733,6 +740,7 @@ async def _send_stone_map_impl(message, user_id: int, stone_id: int) -> None:
                             reply_markup=keyboard,
                         )
                     else:
+                        # Если URL не настроен, отправляем только фото карты без кнопки
                         await message.reply_photo(
                             photo=BytesIO(map_image),
                             caption=get_text("map_caption", user_id)

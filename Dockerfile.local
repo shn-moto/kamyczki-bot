@@ -1,31 +1,33 @@
-# Dockerfile for local development with optional GPU support
-# Usage:
-#   CPU:  docker compose -f docker-compose.local.yml up
-#   GPU:  docker compose -f docker-compose.local.yml --profile gpu up
-
+# Dockerfile для локальной разработки
 FROM python:3.11-slim
 
-WORKDIR /app
-
-# Install system dependencies
+# Устанавливаем системные зависимости и CURL для скрипта ожидания
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies (CPU version by default)
+WORKDIR /app
+
+# Устанавливаем зависимости Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download models during build (cached in image)
+# Предварительная загрузка моделей (кэшируется в слое образа)
 RUN python -c "import open_clip; open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')"
 RUN python -c "from rembg import new_session; new_session('u2net')"
 
-# Copy application code
+# Копируем код приложения
 COPY src/ ./src/
+
+# КОПИРУЕМ СКРИПТ ОЖИДАНИЯ (убедитесь, что файл лежит в корне проекта рядом с Dockerfile)
+COPY wait-for-tunnel.sh .
+RUN chmod +x wait-for-tunnel.sh
 
 ENV PORT=8080
 ENV USE_LOCAL_ML=true
 
-# Use webhook mode (same as Cloud Run)
-CMD ["python", "-m", "uvicorn", "src.main_webhook:app", "--host", "0.0.0.0", "--port", "8080"]
+# Используем скрипт как точку входа. 
+# Он сам запустит uvicorn после того, как получит URL туннеля.
+ENTRYPOINT ["/bin/sh", "./wait-for-tunnel.sh"]

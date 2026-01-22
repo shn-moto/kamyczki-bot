@@ -1,14 +1,3 @@
-# Docker Compose for local development with external Neon database
-#
-# Usage:
-#   CPU version:  docker compose -f docker-compose.local.yml up --build
-#   GPU version:  docker compose -f docker-compose.local.yml -f docker-compose.gpu.yml up --build
-#
-# First time setup:
-#   1. Copy .env.local.example to .env.local
-#   2. Fill in your TELEGRAM_BOT_TOKEN and DATABASE_URL (Neon)
-#   3. Run: docker compose -f docker-compose.local.yml up --build
-
 services:
   bot:
     build:
@@ -21,14 +10,12 @@ services:
       - USE_LOCAL_ML=true
       - USE_WEBHOOK=true
       - PORT=8080
-    # ports not needed - cloudflared connects via internal Docker network
     restart: unless-stopped
 
-  # Cloudflared tunnel for webhook (exposes bot to internet)
+  # Убедитесь, что cloudflared начинается с того же количества пробелов, что и bot выше
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: kamyczki-tunnel
-    command: tunnel --no-autoupdate --url http://bot:8080
-    depends_on:
-      - bot
+    # Фиксируем порт 2000 для метрик, чтобы скрипт ожидания его нашел
+    command: tunnel --no-autoupdate --url http://bot:8080 --metrics 0.0.0.0:2000
     restart: unless-stopped

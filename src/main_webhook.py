@@ -1,9 +1,12 @@
 """Webhook mode entry point for Cloud Run / serverless deployment."""
 
 import logging
+import os
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from telegram import Update, BotCommand
+from telegram.error import RetryAfter
 from telegram.ext import Application
 
 from src.config import settings
@@ -68,7 +71,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Pre-load ML models (skipped if using Modal)
+    # Pre-load ML models
     preload_models()
 
     # Build PTB application
@@ -84,20 +87,32 @@ async def lifespan(app: FastAPI):
     await ptb_app.start()
 
     # Set up bot commands
-    await setup_bot_commands(ptb_app.bot)
-    logger.info("Bot commands menu set")
+    try:
+        await setup_bot_commands(ptb_app.bot)
+        logger.info("Bot commands menu set")
+    except Exception as e:
+        logger.error(f"Failed to set commands: {e}")
 
-    # Set webhook (only if WEBHOOK_URL is configured)
-    if settings.webhook_url:
-        webhook_url = f"{settings.webhook_url}/webhook"
-        await ptb_app.bot.set_webhook(
-            url=webhook_url,
-            secret_token=settings.webhook_secret,
-            drop_pending_updates=True,
-        )
-        logger.info(f"Webhook set: {webhook_url}")
+    # --- ЛОГИКА ВЕБХУКА ---
+    # Проверяем динамический URL от скрипта ожидания или из настроек
+    dynamic_url = os.environ.get("WEBHOOK_URL")
+    base_url = dynamic_url if dynamic_url else settings.webhook_url
+
+    if base_url:
+        webhook_url = f"{base_url}/webhook"
+        try:
+            await ptb_app.bot.set_webhook(
+                url=webhook_url,
+                secret_token=settings.webhook_secret,
+                drop_pending_updates=True, # Очищаем очередь при старте
+            )
+            logger.info(f"Webhook successfully set: {webhook_url}")
+        except RetryAfter as e:
+            logger.error(f"FLOOD CONTROL: Telegram blocks requests for {e.retry_after}s. Please wait.")
+        except Exception as e:
+            logger.error(f"Failed to set webhook at {webhook_url}: {e}")
     else:
-        logger.warning("WEBHOOK_URL not set - webhook not configured. Set it and restart.")
+        logger.warning("WEBHOOK_URL is not set. Bot will not receive any updates!")
 
     yield
 
@@ -114,14 +129,12 @@ app = FastAPI(lifespan=lifespan)
 @app.post("/webhook")
 async def webhook(request: Request) -> Response:
     """Handle incoming Telegram webhook updates."""
-    # Verify secret token
     if settings.webhook_secret:
         token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
         if token != settings.webhook_secret:
             logger.warning("Invalid webhook secret token")
             return Response(status_code=403)
 
-    # Process update
     data = await request.json()
     update = Update.de_json(data, ptb_app.bot)
     await ptb_app.process_update(update)
@@ -131,27 +144,26 @@ async def webhook(request: Request) -> Response:
 
 @app.get("/health")
 async def health():
-    """Health check endpoint for Cloud Run."""
     return {"status": "ok"}
 
 
 @app.get("/")
 async def root():
-    """Root endpoint."""
-    return {"service": "kamyczki-bot", "mode": "webhook"}
+    return {"service": "kamyczki-bot", "mode": "webhook", "status": "running"}
 
 
-# Include Mini App routes with /api prefix
+# Include Mini App routes
 from src.web.routes import router as web_router
 app.include_router(web_router, prefix="/api")
 
-# Serve static files for Mini App
+# Serve static files
 from fastapi.staticfiles import StaticFiles
-import os
 static_dir = os.path.join(os.path.dirname(__file__), "web", "static")
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 if __name__ == "__main__":
     import uvicorn
+    # Используем порт из настроек
     uvicorn.run(app, host="0.0.0.0", port=settings.web_port)
