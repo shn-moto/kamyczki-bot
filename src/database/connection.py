@@ -13,6 +13,7 @@ engine = create_async_engine(
     pool_size=5,              # Базовое количество соединений
     max_overflow=10           # Дополнительные соединения при нагрузке
 )
+
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

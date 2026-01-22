@@ -17,7 +17,13 @@ def get_web_session():
     """Get async session for web server context."""
     global _web_engine, _web_session_maker
     if _web_engine is None:
-        _web_engine = create_async_engine(settings.database_url, echo=False)
+        _web_engine = create_async_engine(settings.db_url, echo=False,
+                              # ПАРАМЕТРЫ ДЛЯ СТАБИЛЬНОСТИ:
+            pool_pre_ping=True,       # Проверяет соединение перед каждым запросом
+            pool_recycle=300,         # Пересоздает соединение каждые 5 минут
+            pool_size=5,              # Базовое количество соединений
+            max_overflow=5            # Дополнительные соединения при нагрузке
+        )
         _web_session_maker = async_sessionmaker(_web_engine, class_=AsyncSession, expire_on_commit=False)
     return _web_session_maker()
 
