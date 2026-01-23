@@ -25,7 +25,7 @@ src/
 │   └── handlers.py      # Telegram ConversationHandler + /search
 ├── database/
 │   ├── models.py        # SQLAlchemy: Stone, StoneHistory, UserSettings
-│   └── connection.py    # AsyncPG connection
+│   └── connection.py    # AsyncPG connection + pool settings
 ├── i18n/
 │   ├── __init__.py      # Экспорт функций локализации
 │   └── translations.py  # Переводы (PL, EN, RU)
@@ -42,6 +42,15 @@ src/
         ├── index.html   # Telegram Mini App (Leaflet.js)
         ├── map.js       # Инициализация карты
         └── style.css    # Стили
+
+# Корневые файлы
+├── docker-compose.local.yml   # Основной деплой (CPU)
+├── docker-compose.gpu.yml     # GPU override для GTX 1070
+├── Dockerfile.local           # CPU образ
+├── Dockerfile.gpu             # GPU образ с CUDA
+├── wait-for-tunnel.sh         # Автополучение URL туннеля
+├── .env.local.example         # Шаблон переменных окружения
+└── requirements.txt           # Python зависимости
 ```
 
 ## Основной флоу
@@ -108,22 +117,21 @@ def translate_to_english(text: str) -> str:
 - API endpoint: `GET /api/stones/{stone_id}/map-data`
 - Static files: `/static/index.html`
 - Требует HTTPS для работы в Telegram
+- **Динамический URL:** берётся из `WEBHOOK_URL` env (установленный wait-for-tunnel.sh) или из `settings.webapp_base_url`
 
 ### Изоляция event loop
 
 **ВАЖНО:** FastAPI работает в отдельном потоке со своим event loop. Использование `get_async_session()` из бота вызовет ошибку "Task got Future attached to a different loop".
 
-Решение в `routes.py`: отдельный engine и session maker:
+Решение в `routes.py`: отдельный engine и session maker с параметрами стабильности:
 ```python
-_web_engine = None
-_web_session_maker = None
-
-def get_web_session():
-    global _web_engine, _web_session_maker
-    if _web_engine is None:
-        _web_engine = create_async_engine(settings.database_url)
-        _web_session_maker = async_sessionmaker(_web_engine)
-    return _web_session_maker()
+_web_engine = create_async_engine(
+    settings.db_url,
+    pool_pre_ping=True,    # Проверяет соединение перед запросом
+    pool_recycle=300,      # Пересоздает соединение каждые 5 минут
+    pool_size=5,
+    max_overflow=5
+)
 ```
 
 ## Геокодинг
@@ -144,6 +152,19 @@ def get_web_session():
 
 ```
 DATABASE_URL=postgresql+asyncpg://user:pass@ep-xxx.eu-central-1.aws.neon.tech/neondb?ssl=require
+```
+
+### Стабильность соединений
+
+Neon может закрывать idle соединения. Параметры в `connection.py`:
+```python
+engine = create_async_engine(
+    settings.db_url,
+    pool_pre_ping=True,       # Проверяет соединение перед каждым запросом
+    pool_recycle=300,         # Пересоздает соединение каждые 5 минут
+    pool_size=5,              # Базовое количество соединений
+    max_overflow=10           # Дополнительные соединения при нагрузке
+)
 ```
 
 ### Хранение фото
@@ -215,6 +236,9 @@ uvicorn[standard] включает uvloop, который патчит `asyncio.
 ### Modal GPU слишком дорогой
 Modal.com берёт деньги за idle GPU время в `scaledown_window`. При keep_warm=1 это ~$425/месяц. Решение: использовать локальный CPU сервер.
 
+### Neon закрывает idle соединения
+Решение: `pool_pre_ping=True` и `pool_recycle=300` в SQLAlchemy engine (см. "Стабильность соединений").
+
 ## Переменные окружения
 
 ```bash
@@ -226,9 +250,9 @@ DATABASE_URL=postgresql+asyncpg://...
 USE_LOCAL_ML=true          # true = локальный CLIP, false = Modal API
 USE_WEBHOOK=true           # true = webhook mode, false = polling
 
-# Webhook (для Docker)
-WEBHOOK_URL=https://xxx.trycloudflare.com  # БЕЗ /webhook в конце!
-WEBAPP_BASE_URL=https://xxx.trycloudflare.com
+# Опциональные (автоматически устанавливаются wait-for-tunnel.sh)
+WEBHOOK_URL=https://xxx.trycloudflare.com  # Автоматически из метрик cloudflared
+WEBAPP_BASE_URL=https://xxx.trycloudflare.com  # Fallback если WEBHOOK_URL не установлен
 
 # Modal (если USE_LOCAL_ML=false)
 MODAL_ENDPOINT_URL=https://xxx.modal.run
@@ -243,31 +267,34 @@ MODAL_ENDPOINT_URL=https://xxx.modal.run
 cd /home/oem/PRG/kamyczki/kamyczki-bot
 git pull
 
-# Настроить .env.local
+# Настроить .env.local (только TELEGRAM_BOT_TOKEN и DATABASE_URL)
 cp .env.local.example .env.local
-nano .env.local  # заполнить переменные
+nano .env.local
 
-# Запустить
+# Запустить (URL туннеля получается автоматически!)
 docker compose -f docker-compose.local.yml up -d --build
-
-# Получить URL туннеля
-docker logs kamyczki-tunnel 2>&1 | grep trycloudflare
-
-# Добавить URL в .env.local и перезапустить
-docker compose -f docker-compose.local.yml up -d --force-recreate bot
 
 # Логи
 docker logs kamyczki-bot-local --tail 50
+```
+
+**Автоматическое получение URL туннеля:**
+
+`wait-for-tunnel.sh` автоматически получает URL из метрик cloudflared (порт 2000) и устанавливает `WEBHOOK_URL`:
+```bash
+TUNNEL_URL=$(curl -s http://cloudflared:2000/metrics | grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' | head -n 1)
+export WEBHOOK_URL="$TUNNEL_URL"
 ```
 
 **Архитектура:**
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
 │ cloudflared │────▶│     bot     │────▶│    Neon     │
-│   HTTPS     │     │   :8080     │     │  PostgreSQL │
+│ HTTPS:2000  │     │   :8080     │     │  PostgreSQL │
 └─────────────┘     └─────────────┘     └─────────────┘
-      ↑                                       │
-  Telegram                              (external DB)
+      ↑                    │
+  Telegram          wait-for-tunnel.sh
+                    (читает URL из метрик)
 ```
 
 ### Cloud Run (бэкап)
@@ -290,6 +317,10 @@ gcloud run services update kamyczki-bot-cpu --region europe-central2 --max-insta
 # С GPU override
 docker compose -f docker-compose.local.yml -f docker-compose.gpu.yml up -d --build
 ```
+
+**Требования:**
+- nvidia-container-toolkit
+- CUDA 11.8 совместимый драйвер
 
 ## Локализация (i18n)
 
@@ -320,6 +351,9 @@ docker compose -f docker-compose.local.yml -f docker-compose.gpu.yml up -d --bui
 - [x] ~~Сохранение языка пользователя в БД~~ (таблица user_settings)
 - [x] ~~Serverless архитектура~~ (Neon DB + local server + Cloud Run backup)
 - [x] ~~Текстовый поиск~~ (/search с переводом через GoogleTranslator)
+- [x] ~~Автоматическое получение URL туннеля~~ (wait-for-tunnel.sh + cloudflared metrics)
+- [x] ~~Стабильность соединений с БД~~ (pool_pre_ping, pool_recycle)
+- [ ] GPU поддержка (GTX 1070) — Dockerfile.gpu требует доработки
 - [ ] Голосовой поиск (speech-to-text → text search)
 - [ ] Inline mode (@bot_name butterfly)
 
